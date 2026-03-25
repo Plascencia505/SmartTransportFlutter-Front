@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:transporte_app/services/api_service.dart';
 
 class HistorialScreen extends StatefulWidget {
@@ -17,20 +18,60 @@ class _HistorialScreenState extends State<HistorialScreen> {
   List<dynamic> _historialFiltrado = [];
   String _filtroActual = 'todos';
 
+  late io.Socket socket; // ¡Nuestro nuevo vigilante en tiempo real!
+
   @override
   void initState() {
     super.initState();
     _cargarHistorial();
+    _conectarSocket(); // Encendemos el radar
+  }
+
+  // --- LA MAGIA EN TIEMPO REAL ---
+  void _conectarSocket() {
+    String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
+
+    socket = io.io(socketUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': false,
+    });
+
+    socket.connect();
+
+    socket.onConnect((_) {
+      final idUsuario = widget.userData['id'] ?? widget.userData['_id'];
+      socket.emit('unirse_canal', idUsuario);
+    });
+
+    // Cuando el chofer escanea tu QR, el backend grita 'boleto_cobrado'.
+    // ¡Lo escuchamos y recargamos el historial en silencio!
+    socket.on('boleto_cobrado', (data) {
+      if (mounted) {
+        _cargarHistorial();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    socket.disconnect();
+    socket.dispose();
+    super.dispose();
   }
 
   Future<void> _cargarHistorial() async {
-    setState(() {
-      _isLoading = true;
-      _error = '';
-    });
+    // Si ya hay datos, no mostramos el loader circular para no molestar al usuario en la recarga por sockets
+    if (_historialCompleto.isEmpty) {
+      setState(() {
+        _isLoading = true;
+        _error = '';
+      });
+    }
 
     final idUsuario = widget.userData['id'] ?? widget.userData['_id'];
     final result = await ApiService.obtenerHistorial(idUsuario);
+
+    if (!mounted) return;
 
     if (result.containsKey('error')) {
       setState(() {
@@ -40,7 +81,8 @@ class _HistorialScreenState extends State<HistorialScreen> {
     } else {
       setState(() {
         _historialCompleto = result['historial'] ?? [];
-        _historialFiltrado = List.from(_historialCompleto);
+        // Reaplicamos el filtro actual por si el usuario estaba viendo solo "Viajes"
+        _aplicarFiltro(_filtroActual);
         _isLoading = false;
       });
     }
@@ -59,7 +101,6 @@ class _HistorialScreenState extends State<HistorialScreen> {
     });
   }
 
-  // Helper para poner la fecha bonita sin necesidad de librerías extra
   String _formatearFecha(String fechaIso) {
     try {
       final fecha = DateTime.parse(fechaIso).toLocal();
@@ -85,13 +126,17 @@ class _HistorialScreenState extends State<HistorialScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _cargarHistorial,
+            onPressed: () {
+              setState(
+                () => _historialCompleto.clear(),
+              ); // Forzamos el loader manual
+              _cargarHistorial();
+            },
           ),
         ],
       ),
       body: Column(
         children: [
-          // --- CARRUSEL DE FILTROS ---
           Container(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             color: Colors.white,
@@ -112,7 +157,6 @@ class _HistorialScreenState extends State<HistorialScreen> {
             ),
           ),
 
-          // --- LISTA DE HISTORIAL ---
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -155,8 +199,6 @@ class _HistorialScreenState extends State<HistorialScreen> {
     );
   }
 
-  // --- WIDGETS AUXILIARES ---
-
   Widget _crearChip(String etiqueta, String valorFiltro) {
     final bool seleccionado = _filtroActual == valorFiltro;
     return ChoiceChip(
@@ -182,7 +224,6 @@ class _HistorialScreenState extends State<HistorialScreen> {
     String trailingText;
     Color trailingColor;
 
-    // Lógica visual basada en el "tipo" que nos manda el DTO del backend
     if (item['tipo'] == 'recarga') {
       icono = Icons.add_circle_outline;
       colorIcono = Colors.green;
@@ -194,11 +235,12 @@ class _HistorialScreenState extends State<HistorialScreen> {
       trailingText = '-\$${item['monto'].abs().toStringAsFixed(2)}';
       trailingColor = Colors.red;
     } else {
-      // Es viaje
+      // Es viaje (Ahora se ve más limpio sin el "-1 Boleto")
       icono = Icons.directions_bus_outlined;
       colorIcono = Colors.blueAccent;
-      trailingText = item['etiquetaExtra'] ?? 'Viaje';
-      trailingColor = Colors.black87;
+      trailingText = item['etiquetaExtra'] ?? 'Completado';
+      trailingColor = Colors
+          .blueAccent; // Lo pusimos azul para que parezca una insignia de éxito
     }
 
     return Card(
@@ -208,7 +250,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: colorIcono.withValues(alpha: 0.15),
+          backgroundColor: colorIcono.withOpacity(0.15),
           radius: 24,
           child: Icon(icono, color: colorIcono, size: 28),
         ),
