@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:transporte_app/screens/login_screen.dart';
-import 'package:transporte_app/screens/dashboard_screen.dart';
+import 'package:transporte_app/screens/main_wrapper_screen.dart';
 import 'package:transporte_app/screens/chofer_screen.dart';
 
 void main() async {
@@ -22,7 +22,7 @@ void main() async {
     if (userData['rol'] == 'operador') {
       pantallaInicial = ChoferScreen(userData: userData);
     } else {
-      pantallaInicial = DashboardScreen(userData: userData);
+      pantallaInicial = MainWrapperScreen(userData: userData);
     }
   }
 

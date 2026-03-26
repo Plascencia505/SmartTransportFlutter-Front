@@ -18,16 +18,15 @@ class _HistorialScreenState extends State<HistorialScreen> {
   List<dynamic> _historialFiltrado = [];
   String _filtroActual = 'todos';
 
-  late io.Socket socket; // ¡Nuestro nuevo vigilante en tiempo real!
+  late io.Socket socket;
 
   @override
   void initState() {
     super.initState();
     _cargarHistorial();
-    _conectarSocket(); // Encendemos el radar
+    _conectarSocket();
   }
 
-  // --- LA MAGIA EN TIEMPO REAL ---
   void _conectarSocket() {
     String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
 
@@ -43,12 +42,8 @@ class _HistorialScreenState extends State<HistorialScreen> {
       socket.emit('unirse_canal', idUsuario);
     });
 
-    // Cuando el chofer escanea tu QR, el backend grita 'boleto_cobrado'.
-    // ¡Lo escuchamos y recargamos el historial en silencio!
     socket.on('boleto_cobrado', (data) {
-      if (mounted) {
-        _cargarHistorial();
-      }
+      if (mounted) _cargarHistorial();
     });
   }
 
@@ -60,7 +55,6 @@ class _HistorialScreenState extends State<HistorialScreen> {
   }
 
   Future<void> _cargarHistorial() async {
-    // Si ya hay datos, no mostramos el loader circular para no molestar al usuario en la recarga por sockets
     if (_historialCompleto.isEmpty) {
       setState(() {
         _isLoading = true;
@@ -81,7 +75,6 @@ class _HistorialScreenState extends State<HistorialScreen> {
     } else {
       setState(() {
         _historialCompleto = result['historial'] ?? [];
-        // Reaplicamos el filtro actual por si el usuario estaba viendo solo "Viajes"
         _aplicarFiltro(_filtroActual);
         _isLoading = false;
       });
@@ -104,7 +97,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
   String _formatearFecha(String fechaIso) {
     try {
       final fecha = DateTime.parse(fechaIso).toLocal();
-      return "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year} ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}";
+      return "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year} • ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}";
     } catch (e) {
       return fechaIso;
     }
@@ -113,53 +106,56 @@ class _HistorialScreenState extends State<HistorialScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
           'Movimientos',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 22,
+            letterSpacing: -0.5,
+          ),
         ),
-        centerTitle: true,
+        centerTitle: false,
         elevation: 0,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(
-                () => _historialCompleto.clear(),
-              ); // Forzamos el loader manual
-              _cargarHistorial();
-            },
-          ),
-        ],
+        foregroundColor: Colors.black87,
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Filtros de tipo de movimiento
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            color: Colors.white,
+            padding: const EdgeInsets.only(top: 8, bottom: 16, left: 16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1),
+              ),
+            ),
             width: double.infinity,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
               child: Row(
                 children: [
                   _crearChip('Todos', 'todos'),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   _crearChip('Viajes', 'viaje'),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   _crearChip('Recargas', 'recarga'),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   _crearChip('Compras', 'compra'),
+                  const SizedBox(width: 16),
                 ],
               ),
             ),
           ),
 
+          // Lista de movimientos
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator(strokeWidth: 3))
                 : _error.isNotEmpty
                 ? Center(
                     child: Text(
@@ -168,25 +164,13 @@ class _HistorialScreenState extends State<HistorialScreen> {
                     ),
                   )
                 : _historialFiltrado.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.receipt_long,
-                          size: 64,
-                          color: Colors.grey.shade300,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No hay movimientos aquí',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  )
+                ? _estadoVacio()
                 : ListView.builder(
-                    padding: const EdgeInsets.all(12),
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 20,
+                    ),
                     itemCount: _historialFiltrado.length,
                     itemBuilder: (context, index) {
                       final item = _historialFiltrado[index];
@@ -199,78 +183,164 @@ class _HistorialScreenState extends State<HistorialScreen> {
     );
   }
 
+  // --- WIDGETS AUXILIARES DE DISEÑO ---
+
   Widget _crearChip(String etiqueta, String valorFiltro) {
     final bool seleccionado = _filtroActual == valorFiltro;
-    return ChoiceChip(
-      label: Text(
-        etiqueta,
-        style: TextStyle(
-          color: seleccionado ? Colors.white : Colors.black87,
-          fontWeight: seleccionado ? FontWeight.bold : FontWeight.normal,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      child: ChoiceChip(
+        label: Text(
+          etiqueta,
+          style: TextStyle(
+            color: seleccionado ? Colors.white : Colors.black87,
+            fontWeight: seleccionado ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 14,
+          ),
         ),
+        selected: seleccionado,
+        selectedColor: Colors.blueAccent,
+        backgroundColor: Colors.grey.shade100,
+        showCheckmark: false,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: seleccionado ? Colors.blueAccent : Colors.grey.shade300,
+            width: 1,
+          ),
+        ),
+        onSelected: (bool selected) {
+          if (selected) _aplicarFiltro(valorFiltro);
+        },
       ),
-      selected: seleccionado,
-      selectedColor: Colors.blueAccent,
-      backgroundColor: Colors.grey.shade200,
-      onSelected: (bool selected) {
-        if (selected) _aplicarFiltro(valorFiltro);
-      },
+    );
+  }
+
+  Widget _estadoVacio() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.receipt_long_rounded,
+              size: 64,
+              color: Colors.grey.shade300,
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Aún no hay movimientos',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tus viajes y recargas aparecerán aquí.',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _construirTarjetaHistorial(Map<String, dynamic> item) {
     IconData icono;
     Color colorIcono;
+    Color colorFondoIcono;
     String trailingText;
     Color trailingColor;
 
     if (item['tipo'] == 'recarga') {
-      icono = Icons.add_circle_outline;
-      colorIcono = Colors.green;
+      icono = Icons.add_card_rounded;
+      colorIcono = const Color(0xFF00BFA5); // Verde azulado para recargas
+      colorFondoIcono = const Color(0xFFE0F2F1); // Fondo suave para recargas
       trailingText = '+\$${item['monto'].abs().toStringAsFixed(2)}';
-      trailingColor = Colors.green;
+      trailingColor = const Color(0xFF00BFA5); // Mismo verde para el texto
     } else if (item['tipo'] == 'compra') {
-      icono = Icons.confirmation_number_outlined;
-      colorIcono = Colors.orange;
+      icono = Icons.confirmation_num_rounded;
+      colorIcono = const Color(0xFFFF9800); // Naranja para compras de boletos
+      colorFondoIcono = const Color(0xFFFFF3E0); // Fondo suave para compras
       trailingText = '-\$${item['monto'].abs().toStringAsFixed(2)}';
-      trailingColor = Colors.red;
+      trailingColor = Colors
+          .black87; // Color neutro para compras, ya que el monto es pequeño y el foco es el ícono
     } else {
-      // Es viaje (Ahora se ve más limpio sin el "-1 Boleto")
-      icono = Icons.directions_bus_outlined;
-      colorIcono = Colors.blueAccent;
+      icono = Icons.directions_bus_rounded;
+      colorIcono =
+          Colors.blueAccent; // Azul para viajes, el ícono más importante
+      colorFondoIcono = const Color(0xFFE3F2FD); // Fondo suave para viajes
       trailingText = item['etiquetaExtra'] ?? 'Completado';
       trailingColor = Colors
-          .blueAccent; // Lo pusimos azul para que parezca una insignia de éxito
+          .blueAccent; // Mismo azul para el texto, ya que el foco es el ícono y el texto es secundario
     }
 
-    return Card(
-      elevation: 2,
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: CircleAvatar(
-          backgroundColor: colorIcono.withOpacity(0.15),
-          radius: 24,
-          child: Icon(icono, color: colorIcono, size: 28),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        leading: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorFondoIcono,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icono, color: colorIcono, size: 24),
         ),
         title: Text(
           item['titulo'] ?? '',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+            color: Colors.black87,
+          ),
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4.0),
+          padding: const EdgeInsets.only(top: 6.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 item['subtitulo'] ?? '',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
               Text(
                 _formatearFecha(item['fecha']),
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
               ),
             ],
           ),
@@ -278,9 +348,10 @@ class _HistorialScreenState extends State<HistorialScreen> {
         trailing: Text(
           trailingText,
           style: TextStyle(
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
             color: trailingColor,
             fontSize: 16,
+            letterSpacing: -0.5,
           ),
         ),
       ),
