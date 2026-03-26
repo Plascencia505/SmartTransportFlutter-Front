@@ -110,64 +110,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _mostrarDialogoRecarga() {
     final TextEditingController montoCtrl = TextEditingController(text: "50");
+
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Recargar Saldo'),
-        content: TextField(
-          controller: montoCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-          ],
-          decoration: const InputDecoration(
-            labelText: 'Monto a recargar (\$)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final double monto = double.tryParse(montoCtrl.text) ?? 0;
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (contextDialog, setStateDialog) {
+            final double monto = double.tryParse(montoCtrl.text) ?? 0;
+            final bool excedeLimite = monto > _controller.limiteMaxRecarga;
 
-              if (monto <= 0 || monto > _controller.limiteMaxRecarga) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'La recarga debe ser entre \$1 y \$${_controller.limiteMaxRecarga.toStringAsFixed(2)}',
+            return AlertDialog(
+              title: const Text('Recargar Saldo'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: montoCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
                     ),
-                    backgroundColor: Colors.red,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp(r'^\d+\.?\d{0,2}'),
+                      ),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'Monto a recargar (\$)',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) => setStateDialog(() {}),
                   ),
-                );
-                return;
-              }
-              final messenger = ScaffoldMessenger.of(context);
-              Navigator.pop(dialogContext);
-              final result = await _controller.ejecutarRecarga(monto);
-              if (result.containsKey('error')) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(result['error']),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              } else {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Recarga exitosa'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            },
-            child: const Text('Confirmar'),
-          ),
-        ],
-      ),
+                  if (excedeLimite)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12.0),
+                      child: Text(
+                        'Máximo \$${_controller.limiteMaxRecarga.toStringAsFixed(2)} por recarga',
+                        style: const TextStyle(
+                          color: Colors.orange,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: (monto <= 0 || excedeLimite)
+                      ? null
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          Navigator.pop(dialogContext);
+                          final result = await _controller.ejecutarRecarga(
+                            monto,
+                          );
+                          if (result.containsKey('error')) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(result['error']),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          } else {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Recarga exitosa'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        },
+                  child: const Text('Confirmar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
