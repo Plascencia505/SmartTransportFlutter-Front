@@ -1,13 +1,10 @@
 import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:transporte_app/services/api_service.dart';
 import 'package:transporte_app/screens/login_screen.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
-import 'package:otp/otp.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:transporte_app/controllers/dashboard_controller.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -19,121 +16,25 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  late double _saldoActual;
-  late int _boletosActuales;
-  bool _isLoading = false;
-
-  final double _limiteMaxRecarga = 1000.0;
-  final int _limiteMaxBoletos = 50;
-
-  late io.Socket socket;
-  Timer? _timerSincronizacion;
-  Timer? _timerPeriodico;
-  String _codigoTotpActual = '';
+  late DashboardController _controller;
 
   @override
   void initState() {
     super.initState();
-    _saldoActual = (widget.userData['saldo'] ?? 0).toDouble();
-    _boletosActuales = widget.userData['boletosDisponibles'] ?? 0;
+    _controller = DashboardController(widget.userData);
 
-    _conectarSocket();
-    _iniciarMotorTOTP();
-    _sincronizarConServidor();
+    _controller.onBoletoCobradoCallback = (boletosRestantes) {
+      if (!mounted) return;
+      _mostrarTicketModerno(boletosRestantes);
+    };
   }
 
-  // Sincronización del TOTP: se alinea al inicio de cada período de 30 segundos para evitar códigos erróneos
-  void _iniciarMotorTOTP() {
-    _generarCodigoTOTP();
-    final int ahora = DateTime.now().millisecondsSinceEpoch;
-    final int msFaltantes = 30000 - (ahora % 30000);
-
-    _timerSincronizacion = Timer(Duration(milliseconds: msFaltantes), () {
-      if (mounted) {
-        _generarCodigoTOTP();
-        _timerPeriodico = Timer.periodic(const Duration(seconds: 30), (timer) {
-          if (mounted) _generarCodigoTOTP();
-        });
-      }
-    });
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
-  void _generarCodigoTOTP() {
-    final String semilla =
-        widget.userData['totpSecret']?.toString().trim() ?? '';
-    if (semilla.isEmpty) return;
-
-    final String nuevoCodigo = OTP.generateTOTPCodeString(
-      semilla,
-      DateTime.now().millisecondsSinceEpoch,
-      length: 6,
-      interval: 30,
-      algorithm: Algorithm.SHA1,
-      isGoogle: true,
-    );
-
-    setState(() {
-      _codigoTotpActual = nuevoCodigo;
-    });
-  }
-
-  // socket.io para recibir eventos en tiempo real del servidor, como cuando se cobra un boleto
-  void _conectarSocket() {
-    String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
-
-    socket = io.io(socketUrl, <String, dynamic>{
-      'transports': ['websocket'],
-      'autoConnect': false,
-    });
-
-    socket.connect();
-
-    socket.onConnect((_) {
-      debugPrint('Conectado al servidor de Sockets');
-      socket.emit('unirse_canal', widget.userData['id']);
-    });
-
-    socket.on('boleto_cobrado', (data) {
-      if (data['idPasajero'] == widget.userData['id']) {
-        if (mounted) {
-          setState(() {
-            _boletosActuales = data['boletosRestantes'];
-          });
-          _mostrarTicketModerno(data['boletosRestantes']);
-        }
-      }
-    });
-  }
-
-  // Esta función pregunta al backend la verdad absoluta sin molestar al usuario
-  Future<void> _sincronizarConServidor() async {
-    final result = await ApiService.obtenerPerfil(
-      widget.userData['id'],
-    ); // Necesitas crear este endpoint/método
-
-    if (!mounted) return;
-
-    if (!result.containsKey('error')) {
-      setState(() {
-        // Actualizamos la UI si hubo cambios mientras la app estaba cerrada
-        _saldoActual = (result['saldo'] ?? _saldoActual).toDouble();
-        _boletosActuales = result['boletosDisponibles'] ?? _boletosActuales;
-      });
-
-      // Una vez que tenemos los datos actualizados, los guardamos en la bóveda para que estén listos para la próxima vez que se abra la app
-      Map<String, dynamic> usuarioActualizado = widget.userData;
-      usuarioActualizado['saldo'] = _saldoActual;
-      usuarioActualizado['boletosDisponibles'] = _boletosActuales;
-
-      const storage = FlutterSecureStorage();
-      await storage.write(
-        key: 'userData',
-        value: jsonEncode(usuarioActualizado),
-      );
-    }
-  }
-
-  // diálogo moderno y limpio para mostrar el resultado del pago al abordar, con un diseño más atractivo y directo
   void _mostrarTicketModerno(int boletosRestantes) {
     showDialog(
       context: context,
@@ -207,122 +108,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    socket.disconnect();
-    socket.dispose();
-    _timerSincronizacion?.cancel();
-    _timerPeriodico?.cancel();
-    super.dispose();
-  }
-
-  Widget _construirAreaCentral() {
-    if (_boletosActuales <= 0) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.confirmation_number_outlined,
-            size: 80,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Sin Boletos Disponibles',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Necesitas adquirir boletos en el módulo\nde compra para poder abordar.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              color: Colors.grey.shade700,
-              height: 1.4,
-            ),
-          ),
-        ],
-      );
-    }
-
-    // Si tiene boletos pero el código aún carga
-    if (_codigoTotpActual.isEmpty) {
-      return const SizedBox(
-        width: 200,
-        height: 200,
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    // Si todo está bien, mostramos el QR dinámico
-    final datosQR = jsonEncode({
-      'idPasajero': widget.userData['id'],
-      'totp': _codigoTotpActual,
-    });
-
-    return QrImageView(
-      data: datosQR,
-      version: QrVersions.auto,
-      size: 200.0,
-      backgroundColor: Colors.white,
-    );
-  }
-
-  Future<void> _ejecutarRecarga(double monto) async {
-    setState(() => _isLoading = true);
-    final result = await ApiService.recargarSaldo(widget.userData['id'], monto);
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (result.containsKey('error')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['error']), backgroundColor: Colors.red),
-      );
-    } else {
-      setState(() => _saldoActual = (result['saldoActual']).toDouble());
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Recarga exitosa'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
-
-  Future<void> _ejecutarCompra(int cantidad, double costoTotal) async {
-    setState(() => _isLoading = true);
-    final result = await ApiService.comprarBoletos(
-      widget.userData['id'],
-      cantidad,
-      costoTotal,
-    );
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (result.containsKey('error')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['error']), backgroundColor: Colors.red),
-      );
-    } else {
-      setState(() {
-        // Devuelve boletos disponibles
-        _boletosActuales =
-            result['boletosDisponibles'] ?? result['boletosActuales'];
-        _saldoActual = (result['saldoRestante']).toDouble();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Compra exitosa'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
-
   void _mostrarDialogoRecarga() {
     final TextEditingController montoCtrl = TextEditingController(text: "50");
     showDialog(
@@ -346,23 +131,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final double monto = double.tryParse(montoCtrl.text) ?? 0;
 
-              if (monto <= 0 || monto > _limiteMaxRecarga) {
+              if (monto <= 0 || monto > _controller.limiteMaxRecarga) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      'La recarga debe ser entre \$1 y \$${_limiteMaxRecarga.toStringAsFixed(2)}',
+                      'La recarga debe ser entre \$1 y \$${_controller.limiteMaxRecarga.toStringAsFixed(2)}',
                     ),
                     backgroundColor: Colors.red,
                   ),
                 );
-                return; // Cortamos la ejecución, no cerramos el diálogo
+                return;
               }
-
+              final messenger = ScaffoldMessenger.of(context);
               Navigator.pop(dialogContext);
-              _ejecutarRecarga(monto);
+              final result = await _controller.ejecutarRecarga(monto);
+              if (result.containsKey('error')) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(result['error']),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              } else {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Recarga exitosa'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
             },
             child: const Text('Confirmar'),
           ),
@@ -381,11 +181,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setStateDialog) {
+          builder: (contextDialog, setStateDialog) {
             final int cantidad = int.tryParse(cantidadCtrl.text) ?? 0;
             final double total = cantidad * tarifa;
-            final bool excedeSaldo = total > _saldoActual;
-            final bool excedeLimiteBoletos = cantidad > _limiteMaxBoletos;
+            final bool excedeSaldo = total > _controller.saldoActual;
+            final bool excedeLimiteBoletos =
+                cantidad > _controller.limiteMaxBoletos;
 
             return AlertDialog(
               title: const Text('Comprar Boletos'),
@@ -430,7 +231,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Text(
-                        'Máximo $_limiteMaxBoletos boletos por compra',
+                        'Máximo ${_controller.limiteMaxBoletos} boletos por compra',
                         style: const TextStyle(
                           color: Colors.orange,
                           fontSize: 12,
@@ -445,13 +246,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  // Deshabilitamos el botón si no hay saldo, si la cantidad es 0, o si excede el límite
                   onPressed:
                       (excedeSaldo || cantidad <= 0 || excedeLimiteBoletos)
                       ? null
-                      : () {
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(context);
                           Navigator.pop(dialogContext);
-                          _ejecutarCompra(cantidad, total);
+                          final result = await _controller.ejecutarCompra(
+                            cantidad,
+                            total,
+                          );
+                          if (result.containsKey('error')) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(result['error']),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          } else {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Compra exitosa'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
                         },
                   child: const Text('Pagar'),
                 ),
@@ -463,209 +282,278 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        title: const Text(
-          'Mi Billetera',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        elevation: 0,
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              const storage = FlutterSecureStorage();
-              await storage.deleteAll();
-              if (!context.mounted) return;
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-              );
-            },
+  // Area principal del dashboard, muestra el QR o mensaje de sin boletos
+  Widget _construirAreaCentral() {
+    if (_controller.boletosActuales <= 0) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.confirmation_number_outlined,
+            size: 80,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Sin Boletos Disponibles',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Necesitas adquirir boletos en el módulo\nde compra para poder abordar.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              color: Colors.grey.shade700,
+              height: 1.4,
+            ),
           ),
         ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 10),
-                  Text(
-                    'Hola, ${widget.userData['nombres']}',
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (widget.userData['aplicaDescuento'] == true)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8.0),
-                      child: Chip(
-                        label: Text('Tarifa Preferencial Activa (50%)'),
-                        backgroundColor: Colors.greenAccent,
-                      ),
-                    ),
-                  const SizedBox(height: 24),
+      );
+    }
 
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+    if (_controller.codigoTotpActual.isEmpty) {
+      return const SizedBox(
+        width: 200,
+        height: 200,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final datosQR = jsonEncode({
+      'idPasajero': widget.userData['id'],
+      'totp': _controller.codigoTotpActual,
+    });
+
+    return QrImageView(
+      data: datosQR,
+      version: QrVersions.auto,
+      size: 200.0,
+      backgroundColor: Colors.white,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (BuildContext builderContext, Widget? child) {
+        return Scaffold(
+          backgroundColor: Colors.grey.shade100,
+          appBar: AppBar(
+            title: const Text(
+              'Mi Billetera',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            elevation: 0,
+            centerTitle: true,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.logout),
+                onPressed: () async {
+                  final navigator = Navigator.of(builderContext);
+
+                  const storage = FlutterSecureStorage();
+                  await storage.deleteAll();
+                  navigator.pushReplacement(
+                    MaterialPageRoute(
+                      builder: (context) => const LoginScreen(),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 24.0,
-                        horizontal: 20.0,
+                  );
+                },
+              ),
+            ],
+          ),
+          body: _controller.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 10),
+                      Text(
+                        'Hola, ${widget.userData['nombres']}',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      if (widget.userData['aplicaDescuento'] == true)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8.0),
+                          child: Chip(
+                            label: Text('Tarifa Preferencial Activa (50%)'),
+                            backgroundColor: Colors.greenAccent,
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+
+                      Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 24.0,
+                            horizontal: 20.0,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              Column(
+                                children: [
+                                  Text(
+                                    'Saldo',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    '\$${_controller.saldoActual.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blueAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                height: 50,
+                                width: 1,
+                                color: Colors.grey.shade300,
+                              ),
+                              Column(
+                                children: [
+                                  Text(
+                                    'Boletos',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    '${_controller.boletosActuales}',
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blueAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                      Text(
+                        _controller.boletosActuales > 0
+                            ? 'Tu Código de Abordaje'
+                            : 'Estado de Cuenta',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      Container(
+                        width: 250,
+                        height: 250,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Center(child: _construirAreaCentral()),
+                      ),
+                      const SizedBox(height: 40),
+                      Row(
                         children: [
-                          Column(
-                            children: [
-                              Text(
-                                'Saldo',
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _mostrarDialogoRecarga,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                backgroundColor: Colors.blueAccent,
+                                elevation: 1,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.add_card,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              label: const Text(
+                                'Recargar',
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '\$${_saldoActual.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 28,
+                                  fontSize: 16,
+                                  color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.blueAccent,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
-                          Container(
-                            height: 50,
-                            width: 1,
-                            color: Colors.grey.shade300,
-                          ),
-                          Column(
-                            children: [
-                              Text(
-                                'Boletos',
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _mostrarDialogoCompra,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade50,
+                                foregroundColor: Colors.blue.shade700,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.confirmation_number,
+                                size: 20,
+                              ),
+                              label: const Text(
+                                'Comprar',
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '$_boletosActuales',
-                                style: const TextStyle(
-                                  fontSize: 28,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.blueAccent,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  Text(
-                    _boletosActuales > 0
-                        ? 'Tu Código de Abordaje'
-                        : 'Estado de Cuenta',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  Container(
-                    width: 250,
-                    height: 250,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Center(child: _construirAreaCentral()),
-                  ),
-                  const SizedBox(height: 40),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _mostrarDialogoRecarga,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: Colors.blueAccent,
-                            elevation: 1,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(
-                            Icons.add_card,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          label: const Text(
-                            'Recargar',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _mostrarDialogoCompra,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue.shade50,
-                            foregroundColor: Colors.blue.shade700,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.confirmation_number, size: 20),
-                          label: const Text(
-                            'Comprar',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
+                      const SizedBox(height: 20),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                ],
-              ),
-            ),
+                ),
+        );
+      },
     );
   }
 }

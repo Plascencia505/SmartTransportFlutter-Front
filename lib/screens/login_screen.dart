@@ -4,8 +4,7 @@ import 'package:transporte_app/services/api_service.dart';
 import 'package:transporte_app/screens/chofer_screen.dart';
 import 'package:transporte_app/screens/registro_screen.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:transporte_app/screens/main_wrapper_screen.dart'; // <--- El envoltorio padre
-// Quitamos la importación directa del dashboard_screen porque el wrapper se encarga de eso
+import 'package:transporte_app/screens/main_wrapper_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -53,7 +52,6 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // --- ENRUTAMIENTO CORREGIDO ---
       if (result['dashboard']['rol'] == 'operador') {
         // Si es chofer, va a su pantalla normal
         Navigator.pushReplacement(
@@ -63,7 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
       } else {
-        // Si es pasajero, ¡lo mandamos al Wrapper para que tenga la barra inferior!
+        // Si es pasajero, lo mandamos al wrapper que contiene el dashboard y el historial
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(

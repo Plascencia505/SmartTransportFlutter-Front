@@ -38,12 +38,9 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
             _indiceActual = index;
           });
 
-          // 3. Si el usuario toca la pestaña del Historial (índice 1)...
+          // Recargamos el historial cada vez que se selecciona la pestaña, para mostrar los datos más recientes
           if (index == 1) {
-            // ...obligamos a la pantalla a ejecutar su función de recarga silenciosa
-            // Usamos un pequeño delay para que la animación de la pestaña sea fluida primero
             Future.delayed(const Duration(milliseconds: 100), () {
-              // Aquí llamamos a la función que le quitaste el guion bajo
               _historialKey.currentState?.cargarHistorialPublico();
             });
           }
