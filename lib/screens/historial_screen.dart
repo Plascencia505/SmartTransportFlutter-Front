@@ -8,10 +8,10 @@ class HistorialScreen extends StatefulWidget {
   const HistorialScreen({super.key, required this.userData});
 
   @override
-  State<HistorialScreen> createState() => _HistorialScreenState();
+  State<HistorialScreen> createState() => HistorialScreenState();
 }
 
-class _HistorialScreenState extends State<HistorialScreen> {
+class HistorialScreenState extends State<HistorialScreen> {
   bool _isLoading = true;
   String _error = '';
   List<dynamic> _historialCompleto = [];
@@ -23,7 +23,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
   @override
   void initState() {
     super.initState();
-    _cargarHistorial();
+    cargarHistorialPublico();
     _conectarSocket();
   }
 
@@ -43,7 +43,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
     });
 
     socket.on('boleto_cobrado', (data) {
-      if (mounted) _cargarHistorial();
+      if (mounted) cargarHistorialPublico();
     });
   }
 
@@ -54,7 +54,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
     super.dispose();
   }
 
-  Future<void> _cargarHistorial() async {
+  Future<void> cargarHistorialPublico() async {
     if (_historialCompleto.isEmpty) {
       setState(() {
         _isLoading = true;

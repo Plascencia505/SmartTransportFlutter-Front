@@ -15,20 +15,21 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
   int _indiceActual = 0;
   late List<Widget> _pantallas;
 
+  final GlobalKey<HistorialScreenState> _historialKey =
+      GlobalKey<HistorialScreenState>();
+
   @override
   void initState() {
     super.initState();
-    // Aquí inicializamos las pantallas y les inyectamos los datos del usuario
     _pantallas = [
       DashboardScreen(userData: widget.userData),
-      HistorialScreen(userData: widget.userData),
+      HistorialScreen(key: _historialKey, userData: widget.userData),
     ];
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // IndexedStack mantiene vivo el estado de los Sockets y el QR del Dashboard
       body: IndexedStack(index: _indiceActual, children: _pantallas),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _indiceActual,
@@ -36,6 +37,16 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
           setState(() {
             _indiceActual = index;
           });
+
+          // 3. Si el usuario toca la pestaña del Historial (índice 1)...
+          if (index == 1) {
+            // ...obligamos a la pantalla a ejecutar su función de recarga silenciosa
+            // Usamos un pequeño delay para que la animación de la pestaña sea fluida primero
+            Future.delayed(const Duration(milliseconds: 100), () {
+              // Aquí llamamos a la función que le quitaste el guion bajo
+              _historialKey.currentState?.cargarHistorialPublico();
+            });
+          }
         },
         backgroundColor: Colors.white,
         selectedItemColor: Colors.blueAccent,

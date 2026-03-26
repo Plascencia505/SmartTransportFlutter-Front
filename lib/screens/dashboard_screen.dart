@@ -7,6 +7,7 @@ import 'package:transporte_app/screens/login_screen.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:otp/otp.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/services.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -21,6 +22,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late double _saldoActual;
   late int _boletosActuales;
   bool _isLoading = false;
+
+  final double _limiteMaxRecarga = 1000.0;
+  final int _limiteMaxBoletos = 50;
 
   late io.Socket socket;
   Timer? _timerSincronizacion;
@@ -37,7 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _iniciarMotorTOTP();
   }
 
-  // --- Sincronización Matemática del QR ---
+  // Sincronización del TOTP: se alinea al inicio de cada período de 30 segundos para evitar códigos erróneos
   void _iniciarMotorTOTP() {
     _generarCodigoTOTP();
     final int ahora = DateTime.now().millisecondsSinceEpoch;
@@ -72,7 +76,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  // --- Sockets ---
+  // socket.io para recibir eventos en tiempo real del servidor, como cuando se cobra un boleto
   void _conectarSocket() {
     String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
 
@@ -96,10 +100,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           });
           _mostrarTicketModerno(data['boletosRestantes']);
         }
+        // Actualizamos la bóveda con los nuevos boletos después de abordar
+        Map<String, dynamic> usuarioActualizado = widget.userData;
+        // Actualizamos el conteo de boletos
+        usuarioActualizado['boletos'] = data['boletosRestantes'];
+        _sincronizarBoveda(usuarioActualizado);
       }
     });
   }
 
+  // diálogo moderno y limpio para mostrar el resultado del pago al abordar, con un diseño más atractivo y directo
   void _mostrarTicketModerno(int boletosRestantes) {
     showDialog(
       context: context,
@@ -294,10 +304,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Recargar Saldo (Simulador)'),
+        title: const Text('Recargar Saldo'),
         content: TextField(
           controller: montoCtrl,
-          keyboardType: TextInputType.number,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          // 🛡️ BARRERA 1: Solo números y máximo 2 decimales
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+          ],
           decoration: const InputDecoration(
             labelText: 'Monto a recargar (\$)',
             border: OutlineInputBorder(),
@@ -311,8 +325,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ElevatedButton(
             onPressed: () {
               final double monto = double.tryParse(montoCtrl.text) ?? 0;
+
+              // 🛡️ BARRERA 2: Validación de límites
+              if (monto <= 0 || monto > _limiteMaxRecarga) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'La recarga debe ser entre \$1 y \$${_limiteMaxRecarga.toStringAsFixed(2)}',
+                    ),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return; // Cortamos la ejecución, no cerramos el diálogo
+              }
+
               Navigator.pop(dialogContext);
-              if (monto > 0) _ejecutarRecarga(monto);
+              _ejecutarRecarga(monto);
             },
             child: const Text('Confirmar'),
           ),
@@ -335,6 +363,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final int cantidad = int.tryParse(cantidadCtrl.text) ?? 0;
             final double total = cantidad * tarifa;
             final bool excedeSaldo = total > _saldoActual;
+            // 🛡️ Nueva bandera de validación
+            final bool excedeLimiteBoletos = cantidad > _limiteMaxBoletos;
 
             return AlertDialog(
               title: const Text('Comprar Boletos'),
@@ -349,6 +379,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   TextField(
                     controller: cantidadCtrl,
                     keyboardType: TextInputType.number,
+                    // 🛡️ BARRERA 1: Puros números enteros
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: const InputDecoration(
                       labelText: 'Cantidad',
                       border: OutlineInputBorder(),
@@ -374,6 +406,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: TextStyle(color: Colors.red, fontSize: 12),
                       ),
                     ),
+                  // 🛡️ BARRERA 2: Aviso de límite excedido
+                  if (excedeLimiteBoletos)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        'Máximo $_limiteMaxBoletos boletos por compra',
+                        style: const TextStyle(
+                          color: Colors.orange,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                 ],
               ),
               actions: [
@@ -382,7 +426,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  onPressed: (excedeSaldo || cantidad <= 0)
+                  // Deshabilitamos el botón si no hay saldo, si la cantidad es 0, o si excede el límite
+                  onPressed:
+                      (excedeSaldo || cantidad <= 0 || excedeLimiteBoletos)
                       ? null
                       : () {
                           Navigator.pop(dialogContext);
@@ -396,6 +442,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       },
     );
+  }
+
+  // Función para sincronizar la memoria con el disco duro del celular
+  Future<void> _sincronizarBoveda(
+    Map<String, dynamic> datosActualizados,
+  ) async {
+    const storage = FlutterSecureStorage();
+    await storage.write(key: 'userData', value: jsonEncode(datosActualizados));
   }
 
   @override
