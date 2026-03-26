@@ -175,4 +175,24 @@ class ApiService {
       return {'error': 'Error de conexión con el servidor.'};
     }
   }
+
+  // -OBTENER PERFIL (SÍ necesita token)
+  static Future<Map<String, dynamic>> obtenerPerfil(String idUsuario) async {
+    try {
+      final headers = await _getHeaders();
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/usuarios/$idUsuario/perfil'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {'error': 'Error al sincronizar perfil.'};
+      }
+    } catch (e) {
+      return {'error': 'Error de conexión.'};
+    }
+  }
 }
