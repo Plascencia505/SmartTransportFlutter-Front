@@ -13,12 +13,14 @@ class DashboardController extends ChangeNotifier {
   double _saldoActual = 0.0;
   int _boletosActuales = 0;
   bool _isLoading = false;
+  bool _isSyncing = true;
   String _codigoTotpActual = '';
 
   // Usos de getters para que la UI pueda acceder a los datos sin modificar directamente
   double get saldoActual => _saldoActual;
   int get boletosActuales => _boletosActuales;
   bool get isLoading => _isLoading;
+  bool get isSyncing => _isSyncing;
   String get codigoTotpActual => _codigoTotpActual;
 
   final double limiteMaxRecarga = 1000.0;
@@ -114,6 +116,8 @@ class DashboardController extends ChangeNotifier {
         value: jsonEncode(usuarioActualizado),
       );
     }
+    _isSyncing = false;
+    notifyListeners();
   }
 
   Future<Map<String, dynamic>> ejecutarRecarga(double monto) async {

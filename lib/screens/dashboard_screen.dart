@@ -5,6 +5,7 @@ import 'package:transporte_app/screens/login_screen.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:transporte_app/controllers/dashboard_controller.dart';
+import 'package:shimmer/shimmer.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -305,6 +306,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _dibujarShimmer(double ancho, double alto) {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade300,
+      highlightColor: Colors.grey.shade100,
+      child: Container(
+        width: ancho,
+        height: alto,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ),
+    );
+  }
+
   // Area principal del dashboard, muestra el QR o mensaje de sin boletos
   Widget _construirAreaCentral() {
     if (_controller.boletosActuales <= 0) {
@@ -440,14 +456,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(
-                                    '\$${_controller.saldoActual.toStringAsFixed(2)}',
-                                    style: const TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blueAccent,
-                                    ),
-                                  ),
+                                  _controller.isSyncing
+                                      ? _dibujarShimmer(80, 30)
+                                      : Text(
+                                          '\$${_controller.saldoActual.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blueAccent,
+                                          ),
+                                        ),
                                 ],
                               ),
                               Container(
@@ -466,14 +484,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(
-                                    '${_controller.boletosActuales}',
-                                    style: const TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blueAccent,
-                                    ),
-                                  ),
+                                  _controller.isSyncing
+                                      ? _dibujarShimmer(40, 30)
+                                      : Text(
+                                          '${_controller.boletosActuales}',
+                                          style: const TextStyle(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blueAccent,
+                                          ),
+                                        ),
                                 ],
                               ),
                             ],
