@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
-import 'package:transporte_app/services/api_service.dart';
+import 'package:transporte_app/controllers/historial_controller.dart';
 
 class HistorialScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -12,86 +11,23 @@ class HistorialScreen extends StatefulWidget {
 }
 
 class HistorialScreenState extends State<HistorialScreen> {
-  bool _isLoading = true;
-  String _error = '';
-  List<dynamic> _historialCompleto = [];
-  List<dynamic> _historialFiltrado = [];
-  String _filtroActual = 'todos';
-
-  late io.Socket socket;
+  late HistorialController _controller;
 
   @override
   void initState() {
     super.initState();
-    cargarHistorialPublico();
-    _conectarSocket();
-  }
-
-  void _conectarSocket() {
-    String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
-
-    socket = io.io(socketUrl, <String, dynamic>{
-      'transports': ['websocket'],
-      'autoConnect': false,
-    });
-
-    socket.connect();
-
-    socket.onConnect((_) {
-      final idUsuario = widget.userData['id'] ?? widget.userData['_id'];
-      socket.emit('unirse_canal', idUsuario);
-    });
-
-    socket.on('boleto_cobrado', (data) {
-      if (mounted) cargarHistorialPublico();
-    });
+    _controller = HistorialController(widget.userData);
   }
 
   @override
   void dispose() {
-    socket.disconnect();
-    socket.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
-  Future<void> cargarHistorialPublico() async {
-    if (_historialCompleto.isEmpty) {
-      setState(() {
-        _isLoading = true;
-        _error = '';
-      });
-    }
-
-    final idUsuario = widget.userData['id'] ?? widget.userData['_id'];
-    final result = await ApiService.obtenerHistorial(idUsuario);
-
-    if (!mounted) return;
-
-    if (result.containsKey('error')) {
-      setState(() {
-        _error = result['error'];
-        _isLoading = false;
-      });
-    } else {
-      setState(() {
-        _historialCompleto = result['historial'] ?? [];
-        _aplicarFiltro(_filtroActual);
-        _isLoading = false;
-      });
-    }
-  }
-
-  void _aplicarFiltro(String filtro) {
-    setState(() {
-      _filtroActual = filtro;
-      if (filtro == 'todos') {
-        _historialFiltrado = List.from(_historialCompleto);
-      } else {
-        _historialFiltrado = _historialCompleto
-            .where((item) => item['tipo'] == filtro)
-            .toList();
-      }
-    });
+  // Este método existe para que el MainWrapperScreen pueda forzar la recarga mediante la GlobalKey
+  void cargarHistorialPublico() {
+    _controller.cargarHistorialPublico();
   }
 
   String _formatearFecha(String fechaIso) {
@@ -105,88 +41,95 @@ class HistorialScreenState extends State<HistorialScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        title: const Text(
-          'Movimientos',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 22,
-            letterSpacing: -0.5,
-          ),
-        ),
-        centerTitle: false,
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Filtros de tipo de movimiento
-          Container(
-            padding: const EdgeInsets.only(top: 8, bottom: 16, left: 16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1),
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (BuildContext context, Widget? child) {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F7FA),
+          appBar: AppBar(
+            title: const Text(
+              'Movimientos',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 22,
+                letterSpacing: -0.5,
               ),
             ),
-            width: double.infinity,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: [
-                  _crearChip('Todos', 'todos'),
-                  const SizedBox(width: 10),
-                  _crearChip('Viajes', 'viaje'),
-                  const SizedBox(width: 10),
-                  _crearChip('Recargas', 'recarga'),
-                  const SizedBox(width: 10),
-                  _crearChip('Compras', 'compra'),
-                  const SizedBox(width: 16),
-                ],
-              ),
-            ),
+            centerTitle: false,
+            elevation: 0,
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black87,
           ),
-
-          // Lista de movimientos
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(strokeWidth: 3))
-                : _error.isNotEmpty
-                ? Center(
-                    child: Text(
-                      _error,
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                  )
-                : _historialFiltrado.isEmpty
-                ? _estadoVacio()
-                : ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 20,
-                    ),
-                    itemCount: _historialFiltrado.length,
-                    itemBuilder: (context, index) {
-                      final item = _historialFiltrado[index];
-                      return _construirTarjetaHistorial(item);
-                    },
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Filtros de tipo de movimiento
+              Container(
+                padding: const EdgeInsets.only(top: 8, bottom: 16, left: 16),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1),
                   ),
+                ),
+                width: double.infinity,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      _crearChip('Todos', 'todos'),
+                      const SizedBox(width: 10),
+                      _crearChip('Viajes', 'viaje'),
+                      const SizedBox(width: 10),
+                      _crearChip('Recargas', 'recarga'),
+                      const SizedBox(width: 10),
+                      _crearChip('Compras', 'compra'),
+                      const SizedBox(width: 16),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Lista de movimientos
+              Expanded(
+                child: _controller.isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(strokeWidth: 3),
+                      )
+                    : _controller.error.isNotEmpty
+                    ? Center(
+                        child: Text(
+                          _controller.error,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      )
+                    : _controller.historialFiltrado.isEmpty
+                    ? _estadoVacio()
+                    : ListView.builder(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 20,
+                        ),
+                        itemCount: _controller.historialFiltrado.length,
+                        itemBuilder: (context, index) {
+                          final item = _controller.historialFiltrado[index];
+                          return _construirTarjetaHistorial(item);
+                        },
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  // --- WIDGETS AUXILIARES DE DISEÑO ---
+  // widget para crear los chips de filtro, con animación y estilos personalizados
 
   Widget _crearChip(String etiqueta, String valorFiltro) {
-    final bool seleccionado = _filtroActual == valorFiltro;
+    final bool seleccionado = _controller.filtroActual == valorFiltro;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       child: ChoiceChip(
@@ -211,7 +154,9 @@ class HistorialScreenState extends State<HistorialScreen> {
           ),
         ),
         onSelected: (bool selected) {
-          if (selected) _aplicarFiltro(valorFiltro);
+          if (selected) {
+            _controller.cambiarFiltro(valorFiltro);
+          }
         },
       ),
     );
@@ -269,25 +214,22 @@ class HistorialScreenState extends State<HistorialScreen> {
 
     if (item['tipo'] == 'recarga') {
       icono = Icons.add_card_rounded;
-      colorIcono = const Color(0xFF00BFA5); // Verde azulado para recargas
-      colorFondoIcono = const Color(0xFFE0F2F1); // Fondo suave para recargas
+      colorIcono = const Color(0xFF00BFA5);
+      colorFondoIcono = const Color(0xFFE0F2F1);
       trailingText = '+\$${item['monto'].abs().toStringAsFixed(2)}';
-      trailingColor = const Color(0xFF00BFA5); // Mismo verde para el texto
+      trailingColor = const Color(0xFF00BFA5);
     } else if (item['tipo'] == 'compra') {
       icono = Icons.confirmation_num_rounded;
-      colorIcono = const Color(0xFFFF9800); // Naranja para compras de boletos
-      colorFondoIcono = const Color(0xFFFFF3E0); // Fondo suave para compras
+      colorIcono = const Color(0xFFFF9800);
+      colorFondoIcono = const Color(0xFFFFF3E0);
       trailingText = '-\$${item['monto'].abs().toStringAsFixed(2)}';
-      trailingColor = Colors
-          .black87; // Color neutro para compras, ya que el monto es pequeño y el foco es el ícono
+      trailingColor = Colors.black87;
     } else {
       icono = Icons.directions_bus_rounded;
-      colorIcono =
-          Colors.blueAccent; // Azul para viajes, el ícono más importante
-      colorFondoIcono = const Color(0xFFE3F2FD); // Fondo suave para viajes
+      colorIcono = Colors.blueAccent;
+      colorFondoIcono = const Color(0xFFE3F2FD);
       trailingText = item['etiquetaExtra'] ?? 'Completado';
-      trailingColor = Colors
-          .blueAccent; // Mismo azul para el texto, ya que el foco es el ícono y el texto es secundario
+      trailingColor = Colors.blueAccent;
     }
 
     return Container(
