@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:transporte_app/screens/login_screen.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:transporte_app/controllers/dashboard_controller.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -170,6 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             monto,
                           );
                           if (result.containsKey('error')) {
+                            HapticFeedback.heavyImpact();
                             messenger.showSnackBar(
                               SnackBar(
                                 content: Text(result['error']),
@@ -177,6 +179,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                             );
                           } else {
+                            HapticFeedback.mediumImpact();
                             messenger.showSnackBar(
                               const SnackBar(
                                 content: Text('Recarga exitosa'),
@@ -281,6 +284,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             total,
                           );
                           if (result.containsKey('error')) {
+                            HapticFeedback.heavyImpact();
                             messenger.showSnackBar(
                               SnackBar(
                                 content: Text(result['error']),
@@ -288,6 +292,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                             );
                           } else {
+                            HapticFeedback.mediumImpact();
                             messenger.showSnackBar(
                               const SnackBar(
                                 content: Text('Compra exitosa'),
@@ -321,34 +326,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _construirSaldoText(double saldo) {
+    // Formatea el número con comas (ej. 1,050.50)
+    final formatter = NumberFormat('#,##0.00', 'en_US');
+    final parts = formatter.format(saldo).split('.');
+    final enteros = parts[0];
+    final centavos = parts[1];
+
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.blueAccent,
+        ),
+        children: [
+          const TextSpan(text: '\$', style: TextStyle(fontSize: 18)),
+          TextSpan(text: enteros, style: const TextStyle(fontSize: 28)),
+          TextSpan(
+            text: '.$centavos',
+            style: const TextStyle(fontSize: 16),
+          ), // Centavos más sutiles
+        ],
+      ),
+    );
+  }
+
   // Area principal del dashboard, muestra el QR o mensaje de sin boletos
   Widget _construirAreaCentral() {
     if (_controller.boletosActuales <= 0) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.confirmation_number_outlined,
-            size: 80,
-            color: Colors.grey.shade400,
+          Container(
+            height: 90,
+            width: 90,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              shape: BoxShape.circle,
+            ),
+            // child: Image.asset('assets/perrito_vacio_chibi.png'),
+            child: const Icon(Icons.pets_rounded, size: 45, color: Colors.grey),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           const Text(
-            'Sin Boletos Disponibles',
+            '¡Ups! Sin Boletos',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
-            'Necesitas adquirir boletos en el módulo\nde compra para poder abordar.',
+            'Adquiere boletos abajo\npara generar tu código.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 15,
-              color: Colors.grey.shade700,
-              height: 1.4,
+              fontSize: 14,
+              color: Colors.grey.shade500,
+              height: 1.3,
             ),
           ),
         ],
@@ -356,11 +391,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     if (_controller.codigoTotpActual.isEmpty) {
-      return const SizedBox(
-        width: 200,
-        height: 200,
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return _dibujarShimmer(200, 200);
     }
 
     final datosQR = jsonEncode({
@@ -458,13 +489,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   const SizedBox(height: 6),
                                   _controller.isSyncing
                                       ? _dibujarShimmer(80, 30)
-                                      : Text(
-                                          '\$${_controller.saldoActual.toStringAsFixed(2)}',
-                                          style: const TextStyle(
-                                            fontSize: 28,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blueAccent,
-                                          ),
+                                      : _construirSaldoText(
+                                          _controller.saldoActual,
                                         ),
                                 ],
                               ),
@@ -535,7 +561,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: _mostrarDialogoRecarga,
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                _mostrarDialogoRecarga();
+                              },
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 16,
@@ -564,7 +593,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: _mostrarDialogoCompra,
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                _mostrarDialogoCompra();
+                              },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue.shade50,
                                 foregroundColor: Colors.blue.shade700,
