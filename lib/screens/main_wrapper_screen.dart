@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:transporte_app/screens/dashboard_screen.dart';
 import 'package:transporte_app/screens/historial_screen.dart';
+import 'package:transporte_app/screens/perfil_screen.dart';
 
 class MainWrapperScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -20,7 +21,6 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
   final GlobalKey<HistorialScreenState> _historialKey =
       GlobalKey<HistorialScreenState>();
 
-  // Banderas y variables para el monitor de red
   late StreamSubscription<List<ConnectivityResult>> _suscripcionRed;
   bool _sinConexion = false;
   bool _mostrarRestablecido = false;
@@ -31,27 +31,21 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
     _pantallas = [
       DashboardScreen(userData: widget.userData),
       HistorialScreen(key: _historialKey, userData: widget.userData),
+      PerfilScreen(userData: widget.userData),
     ];
-
-    // Iniciamos el monitor de red
     _iniciarMonitorDeRed();
   }
 
   void _iniciarMonitorDeRed() async {
-    // Revisamos el estado inicial de la conexión para mostrar el cintillo correcto desde el principio
     final estadoInicial = await Connectivity().checkConnectivity();
     _procesarCambioDeRed(estadoInicial);
-
-    // Escuchamos los cambios de red para actualizar el estado en tiempo real
     _suscripcionRed = Connectivity().onConnectivityChanged.listen(
       _procesarCambioDeRed,
     );
   }
 
   void _procesarCambioDeRed(List<ConnectivityResult> resultados) {
-    // La nueva versión del paquete devuelve una lista. Si todos son "none", no hay internet.
     final noHayInternet = resultados.every((r) => r == ConnectivityResult.none);
-
     if (noHayInternet && !_sinConexion) {
       if (mounted) {
         setState(() {
@@ -65,12 +59,8 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
           _sinConexion = false;
           _mostrarRestablecido = true;
         });
-
-        // ocultar luego de 3 segundos
         Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) {
-            setState(() => _mostrarRestablecido = false);
-          }
+          if (mounted) setState(() => _mostrarRestablecido = false);
         });
       }
     }
@@ -78,49 +68,59 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
 
   @override
   void dispose() {
-    _suscripcionRed
-        .cancel(); // Detenemos el monitor de red para ahorrar recursos y evitar fugas de memoria
+    _suscripcionRed.cancel();
     super.dispose();
   }
 
-  // cintillo rojo/verde de conexión
-  Widget _construirCintilloRed() {
+  // pill para mostrar el estado de la conexión (sin conexión o restablecida)
+  Widget _construirPildoraRed() {
     final bool mostrarCintillo = _sinConexion || _mostrarRestablecido;
-    final Color colorFondo = _sinConexion
-        ? Colors.red.shade600
-        : Colors.green.shade600;
+    final Color colorFondo = Colors.black87;
     final String texto = _sinConexion
-        ? 'Sin conexión a Internet'
+        ? 'Sin conexión'
         : 'Conexión restablecida';
     final IconData icono = _sinConexion
         ? Icons.wifi_off_rounded
         : Icons.wifi_rounded;
 
-    return AnimatedContainer(
+    return AnimatedPositioned(
       duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOut,
-      height: mostrarCintillo ? 32 : 0, // Se oculta encogiendo su altura a 0
-      width: double.infinity,
-      color: colorFondo,
-      child: SingleChildScrollView(
-        physics:
-            const NeverScrollableScrollPhysics(), // Evita errores visuales al animar
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icono, color: Colors.white, size: 14),
-              const SizedBox(width: 8),
-              Text(
-                texto,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
+      curve: Curves.easeOutBack,
+      top: mostrarCintillo ? 50.0 : -60.0,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 300),
+          opacity: mostrarCintillo ? 1.0 : 0.0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: colorFondo,
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-            ],
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icono, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  texto,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -131,13 +131,10 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
+      body: Stack(
         children: [
-          // Envolvemos el cintillo en SafeArea solo por arriba para que no lo tape el "Notch" de la cámara
-          SafeArea(bottom: false, child: _construirCintilloRed()),
-          Expanded(
-            child: IndexedStack(index: _indiceActual, children: _pantallas),
-          ),
+          IndexedStack(index: _indiceActual, children: _pantallas),
+          _construirPildoraRed(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -146,7 +143,6 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
           setState(() {
             _indiceActual = index;
           });
-
           if (index == 1) {
             Future.delayed(const Duration(milliseconds: 100), () {
               _historialKey.currentState?.cargarHistorialPublico();
@@ -168,6 +164,11 @@ class _MainWrapperScreenState extends State<MainWrapperScreen> {
             icon: Icon(Icons.receipt_long_outlined),
             activeIcon: Icon(Icons.receipt_long),
             label: 'Historial',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'Perfil',
           ),
         ],
       ),

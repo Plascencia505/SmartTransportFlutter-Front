@@ -1,7 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:transporte_app/screens/login_screen.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -327,7 +325,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _construirSaldoText(double saldo) {
-    // Formatea el número con comas (ej. 1,050.50)
     final formatter = NumberFormat('#,##0.00', 'en_US');
     final parts = formatter.format(saldo).split('.');
     final enteros = parts[0];
@@ -342,16 +339,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           const TextSpan(text: '\$', style: TextStyle(fontSize: 18)),
           TextSpan(text: enteros, style: const TextStyle(fontSize: 28)),
-          TextSpan(
-            text: '.$centavos',
-            style: const TextStyle(fontSize: 16),
-          ), // Centavos más sutiles
+          TextSpan(text: '.$centavos', style: const TextStyle(fontSize: 16)),
         ],
       ),
     );
   }
 
-  // Area principal del dashboard, muestra el QR o mensaje de sin boletos
   Widget _construirAreaCentral() {
     if (_controller.boletosActuales <= 0) {
       return Column(
@@ -364,7 +357,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: Colors.grey.shade50,
               shape: BoxShape.circle,
             ),
-            // child: Image.asset('assets/perrito_vacio_chibi.png'),
             child: const Icon(Icons.pets_rounded, size: 45, color: Colors.grey),
           ),
           const SizedBox(height: 16),
@@ -413,31 +405,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       listenable: _controller,
       builder: (BuildContext builderContext, Widget? child) {
         return Scaffold(
-          backgroundColor: Colors.grey.shade100,
-          appBar: AppBar(
-            title: const Text(
-              'Mi Billetera',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            elevation: 0,
-            centerTitle: true,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.logout),
-                onPressed: () async {
-                  final navigator = Navigator.of(builderContext);
-
-                  const storage = FlutterSecureStorage();
-                  await storage.deleteAll();
-                  navigator.pushReplacement(
-                    MaterialPageRoute(
-                      builder: (context) => const LoginScreen(),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
+          // Colores y fondo igual a los de historial y perfil para mantener consistencia
+          backgroundColor: const Color(0xFFF5F7FA),
           body: _controller.isLoading
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
@@ -446,8 +415,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onRefresh: () async {
                     HapticFeedback.lightImpact();
                     final error = await _controller.recargaSilenciosa();
-
-                    // Mostrar mensaje de error si la recarga silenciosa falla, pero solo si el widget sigue montado
                     if (error != null && builderContext.mounted) {
                       ScaffoldMessenger.of(builderContext).showSnackBar(
                         SnackBar(
@@ -464,7 +431,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(20.0),
+                    padding: const EdgeInsets.only(
+                      top: 60.0,
+                      left: 20.0,
+                      right: 20.0,
+                      bottom: 40.0,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -486,10 +458,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         const SizedBox(height: 24),
 
-                        Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
+                        // Tarjeta de Saldo y Boletos
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
@@ -499,29 +479,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                Column(
-                                  children: [
-                                    Text(
-                                      'Saldo',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey.shade600,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    _controller.isSyncing
-                                        ? _dibujarShimmer(80, 30)
-                                        : _construirSaldoText(
-                                            _controller.saldoActual,
-                                          ),
-                                  ],
-                                ),
-                                Container(
-                                  height: 50,
-                                  width: 1,
-                                  color: Colors.grey.shade300,
-                                ),
+                                // Boletos
                                 Column(
                                   children: [
                                     Text(
@@ -542,6 +500,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               fontWeight: FontWeight.bold,
                                               color: Colors.blueAccent,
                                             ),
+                                          ),
+                                  ],
+                                ),
+                                Container(
+                                  height: 50,
+                                  width: 1,
+                                  color: Colors.grey.shade200, // Sutil divisor
+                                ),
+                                // Saldo
+                                Column(
+                                  children: [
+                                    Text(
+                                      'Saldo',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    _controller.isSyncing
+                                        ? _dibujarShimmer(80, 30)
+                                        : _construirSaldoText(
+                                            _controller.saldoActual,
                                           ),
                                   ],
                                 ),
@@ -579,9 +561,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           child: Center(child: _construirAreaCentral()),
                         ),
+
+                        // Mini-historial del último viaje
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.03),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.history,
+                                color: Colors.grey.shade500,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Último viaje: Ayer, 14:30 hrs',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
                         const SizedBox(height: 40),
+
+                        // Botones de acción (Recargar y Comprar)
                         Row(
                           children: [
+                            // Recargar (Fondo claro, texto azul)
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: () {
@@ -592,28 +617,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 16,
                                   ),
-                                  backgroundColor: Colors.blueAccent,
-                                  elevation: 1,
+                                  backgroundColor: Colors.blue.shade50,
+                                  foregroundColor: Colors.blue.shade700,
+                                  elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                icon: const Icon(
-                                  Icons.add_card,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
+                                icon: const Icon(Icons.add_card, size: 20),
                                 label: const Text(
                                   'Recargar',
                                   style: TextStyle(
                                     fontSize: 16,
-                                    color: Colors.white,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
                             ),
                             const SizedBox(width: 12),
+                            // Comprar (Fondo azul intenso, texto blanco)
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: () {
@@ -621,9 +643,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   _mostrarDialogoCompra();
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue.shade50,
-                                  foregroundColor: Colors.blue.shade700,
-                                  elevation: 0,
+                                  backgroundColor: Colors.blueAccent,
+                                  foregroundColor: Colors.white,
+                                  elevation: 1,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 16,
                                   ),

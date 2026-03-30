@@ -47,119 +47,122 @@ class HistorialScreenState extends State<HistorialScreen> {
       builder: (BuildContext context, Widget? child) {
         return Scaffold(
           backgroundColor: const Color(0xFFF5F7FA),
-          appBar: AppBar(
-            title: const Text(
-              'Movimientos',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 22,
-                letterSpacing: -0.5,
-              ),
-            ),
-            centerTitle: false,
-            elevation: 0,
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black87,
-          ),
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Filtros de tipo de movimiento
-              Container(
-                padding: const EdgeInsets.only(top: 8, bottom: 16, left: 16),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1),
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(left: 20, top: 10, bottom: 5),
+                  child: Text(
+                    'Movimientos',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 24,
+                      letterSpacing: -0.5,
+                      color: Colors.black87,
+                    ),
                   ),
                 ),
-                width: double.infinity,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  child: Row(
-                    children: [
-                      _crearChip('Todos', 'todos'),
-                      const SizedBox(width: 10),
-                      _crearChip('Viajes', 'viaje'),
-                      const SizedBox(width: 10),
-                      _crearChip('Recargas', 'recarga'),
-                      const SizedBox(width: 10),
-                      _crearChip('Compras', 'compra'),
-                      const SizedBox(width: 16),
-                    ],
+                // Filtros de tipo de movimiento
+                Container(
+                  padding: const EdgeInsets.only(top: 8, bottom: 16, left: 16),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1),
+                    ),
+                  ),
+                  width: double.infinity,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: [
+                        _crearChip('Todos', 'todos'),
+                        const SizedBox(width: 10),
+                        _crearChip('Viajes', 'viaje'),
+                        const SizedBox(width: 10),
+                        _crearChip('Recargas', 'recarga'),
+                        const SizedBox(width: 10),
+                        _crearChip('Compras', 'compra'),
+                        const SizedBox(width: 16),
+                      ],
+                    ),
                   ),
                 ),
-              ),
 
-              // Lista de movimientos
-              Expanded(
-                child: _controller.isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(strokeWidth: 3),
-                      )
-                    : RefreshIndicator(
-                        color: Colors.blueAccent,
-                        backgroundColor: Colors.white,
-                        onRefresh: () async {
-                          HapticFeedback.lightImpact();
-                          final error = await _controller.recargaSilenciosa();
+                // Lista de movimientos
+                Expanded(
+                  child: _controller.isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        )
+                      : RefreshIndicator(
+                          color: Colors.blueAccent,
+                          backgroundColor: Colors.white,
+                          onRefresh: () async {
+                            HapticFeedback.lightImpact();
+                            final error = await _controller.recargaSilenciosa();
 
-                          if (error != null && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  error,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
+                            if (error != null && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    error,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
+                                  backgroundColor: Colors.grey.shade800,
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
                                 ),
-                                backgroundColor: Colors.grey.shade800,
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          }
-                        },
-                        // Si no hay historial, mostramos un mensaje amigable en lugar de la lista vacía
-                        child: _controller.historialFiltrado.isEmpty
-                            ? ListView(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                children: [
-                                  SizedBox(
-                                    height:
-                                        MediaQuery.of(context).size.height *
-                                        0.2,
-                                  ),
-                                  _controller.error.isNotEmpty
-                                      ? Center(
-                                          child: Text(
-                                            _controller.error,
-                                            style: const TextStyle(
-                                              color: Colors.red,
+                              );
+                            }
+                          },
+                          // Si no hay historial, mostramos un mensaje amigable en lugar de la lista vacía
+                          child: _controller.historialFiltrado.isEmpty
+                              ? ListView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  children: [
+                                    SizedBox(
+                                      height:
+                                          MediaQuery.of(context).size.height *
+                                          0.2,
+                                    ),
+                                    _controller.error.isNotEmpty
+                                        ? Center(
+                                            child: Text(
+                                              _controller.error,
+                                              style: const TextStyle(
+                                                color: Colors.red,
+                                              ),
                                             ),
-                                          ),
-                                        )
-                                      : _estadoVacio(),
-                                ],
-                              )
-                            //Si hay historial, mostramos la lista normal
-                            : ListView.builder(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 20,
+                                          )
+                                        : _estadoVacio(),
+                                  ],
+                                )
+                              //Si hay historial, mostramos la lista normal
+                              : ListView.builder(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 20,
+                                  ),
+                                  itemCount:
+                                      _controller.historialFiltrado.length,
+                                  itemBuilder: (context, index) {
+                                    final item =
+                                        _controller.historialFiltrado[index];
+                                    return _construirTarjetaHistorial(item);
+                                  },
                                 ),
-                                itemCount: _controller.historialFiltrado.length,
-                                itemBuilder: (context, index) {
-                                  final item =
-                                      _controller.historialFiltrado[index];
-                                  return _construirTarjetaHistorial(item);
-                                },
-                              ),
-                      ),
-              ),
-            ],
+                        ),
+                ),
+              ],
+            ),
           ),
         );
       },
