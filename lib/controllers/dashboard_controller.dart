@@ -15,6 +15,8 @@ class DashboardController extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSyncing = true;
   String _codigoTotpActual = '';
+  DateTime _ultimaSincronizacion = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _isFetching = false;
 
   // Usos de getters para que la UI pueda acceder a los datos sin modificar directamente
   double get saldoActual => _saldoActual;
@@ -118,6 +120,38 @@ class DashboardController extends ChangeNotifier {
     }
     _isSyncing = false;
     notifyListeners();
+  }
+
+  // Función que la UI puede llamar para recargar el historial al volver a la pantalla o hacer pull-to-refresh
+  Future<String?> recargaSilenciosa() async {
+    // Escudo Anti-Spam: Ignoramos si ya está cargando o si recargó hace menos de 3 segundos
+    if (_isFetching) return null;
+    if (DateTime.now().difference(_ultimaSincronizacion).inSeconds < 3) {
+      return null;
+    }
+
+    _isFetching = true;
+    final result = await ApiService.obtenerPerfil(userData['id']);
+    _isFetching = false;
+
+    if (result.containsKey('error')) {
+      // En caso de error, no actualizamos nada y devolvemos el mensaje para mostrarlo en la UI
+      return "Sin conexión. Mostrando datos guardados.";
+    }
+
+    _saldoActual = (result['saldo'] ?? _saldoActual).toDouble();
+    _boletosActuales = result['boletosDisponibles'] ?? _boletosActuales;
+    _ultimaSincronizacion = DateTime.now();
+
+    // Guardar la nueva "verdad" en la bóveda
+    Map<String, dynamic> usuarioActualizado = userData;
+    usuarioActualizado['saldo'] = _saldoActual;
+    usuarioActualizado['boletosDisponibles'] = _boletosActuales;
+    const storage = FlutterSecureStorage();
+    await storage.write(key: 'userData', value: jsonEncode(usuarioActualizado));
+
+    notifyListeners();
+    return null; // Null en este caso es señal de que todo salió bien y no hay mensaje de error que mostrar
   }
 
   Future<Map<String, dynamic>> ejecutarRecarga(double monto) async {

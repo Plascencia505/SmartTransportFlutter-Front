@@ -440,191 +440,215 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           body: _controller.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      const SizedBox(height: 10),
-                      Text(
-                        'Hola, ${widget.userData['nombres']}',
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (widget.userData['aplicaDescuento'] == true)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8.0),
-                          child: Chip(
-                            label: Text('Tarifa Preferencial Activa (50%)'),
-                            backgroundColor: Colors.greenAccent,
-                          ),
-                        ),
-                      const SizedBox(height: 24),
+              : RefreshIndicator(
+                  color: Colors.blueAccent,
+                  backgroundColor: Colors.white,
+                  onRefresh: () async {
+                    HapticFeedback.lightImpact();
+                    final error = await _controller.recargaSilenciosa();
 
-                      Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 24.0,
-                            horizontal: 20.0,
+                    // Mostrar mensaje de error si la recarga silenciosa falla, pero solo si el widget sigue montado
+                    if (error != null && builderContext.mounted) {
+                      ScaffoldMessenger.of(builderContext).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            error,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              Column(
-                                children: [
-                                  Text(
-                                    'Saldo',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey.shade600,
-                                      fontWeight: FontWeight.w600,
+                          backgroundColor: Colors.grey.shade800,
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 10),
+                        Text(
+                          'Hola, ${widget.userData['nombres']}',
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (widget.userData['aplicaDescuento'] == true)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8.0),
+                            child: Chip(
+                              label: Text('Tarifa Preferencial Activa (50%)'),
+                              backgroundColor: Colors.greenAccent,
+                            ),
+                          ),
+                        const SizedBox(height: 24),
+
+                        Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 24.0,
+                              horizontal: 20.0,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                Column(
+                                  children: [
+                                    Text(
+                                      'Saldo',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  _controller.isSyncing
-                                      ? _dibujarShimmer(80, 30)
-                                      : _construirSaldoText(
-                                          _controller.saldoActual,
-                                        ),
-                                ],
-                              ),
-                              Container(
-                                height: 50,
-                                width: 1,
-                                color: Colors.grey.shade300,
-                              ),
-                              Column(
-                                children: [
-                                  Text(
-                                    'Boletos',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey.shade600,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  _controller.isSyncing
-                                      ? _dibujarShimmer(40, 30)
-                                      : Text(
-                                          '${_controller.boletosActuales}',
-                                          style: const TextStyle(
-                                            fontSize: 28,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blueAccent,
+                                    const SizedBox(height: 6),
+                                    _controller.isSyncing
+                                        ? _dibujarShimmer(80, 30)
+                                        : _construirSaldoText(
+                                            _controller.saldoActual,
                                           ),
-                                        ),
-                                ],
+                                  ],
+                                ),
+                                Container(
+                                  height: 50,
+                                  width: 1,
+                                  color: Colors.grey.shade300,
+                                ),
+                                Column(
+                                  children: [
+                                    Text(
+                                      'Boletos',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    _controller.isSyncing
+                                        ? _dibujarShimmer(40, 30)
+                                        : Text(
+                                            '${_controller.boletosActuales}',
+                                            style: const TextStyle(
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blueAccent,
+                                            ),
+                                          ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                        Text(
+                          _controller.boletosActuales > 0
+                              ? 'Tu Código de Abordaje'
+                              : 'Estado de Cuenta',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+
+                        Container(
+                          width: 250,
+                          height: 250,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
                               ),
                             ],
                           ),
+                          child: Center(child: _construirAreaCentral()),
                         ),
-                      ),
-                      const SizedBox(height: 40),
-                      Text(
-                        _controller.boletosActuales > 0
-                            ? 'Tu Código de Abordaje'
-                            : 'Estado de Cuenta',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-
-                      Container(
-                        width: 250,
-                        height: 250,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
+                        const SizedBox(height: 40),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  _mostrarDialogoRecarga();
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  backgroundColor: Colors.blueAccent,
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.add_card,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                label: const Text(
+                                  'Recargar',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  _mostrarDialogoCompra();
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue.shade50,
+                                  foregroundColor: Colors.blue.shade700,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.confirmation_number,
+                                  size: 20,
+                                ),
+                                label: const Text(
+                                  'Comprar',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                         ),
-                        child: Center(child: _construirAreaCentral()),
-                      ),
-                      const SizedBox(height: 40),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                HapticFeedback.lightImpact();
-                                _mostrarDialogoRecarga();
-                              },
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                backgroundColor: Colors.blueAccent,
-                                elevation: 1,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(
-                                Icons.add_card,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              label: const Text(
-                                'Recargar',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                HapticFeedback.lightImpact();
-                                _mostrarDialogoCompra();
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.shade50,
-                                foregroundColor: Colors.blue.shade700,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(
-                                Icons.confirmation_number,
-                                size: 20,
-                              ),
-                              label: const Text(
-                                'Comprar',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                        const SizedBox(height: 20),
+                      ],
+                    ),
                   ),
                 ),
         );

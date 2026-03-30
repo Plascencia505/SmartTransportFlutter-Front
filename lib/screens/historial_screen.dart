@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:transporte_app/controllers/historial_controller.dart';
+import 'package:flutter/services.dart';
 
 class HistorialScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -97,26 +98,65 @@ class HistorialScreenState extends State<HistorialScreen> {
                     ? const Center(
                         child: CircularProgressIndicator(strokeWidth: 3),
                       )
-                    : _controller.error.isNotEmpty
-                    ? Center(
-                        child: Text(
-                          _controller.error,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      )
-                    : _controller.historialFiltrado.isEmpty
-                    ? _estadoVacio()
-                    : ListView.builder(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 20,
-                        ),
-                        itemCount: _controller.historialFiltrado.length,
-                        itemBuilder: (context, index) {
-                          final item = _controller.historialFiltrado[index];
-                          return _construirTarjetaHistorial(item);
+                    : RefreshIndicator(
+                        color: Colors.blueAccent,
+                        backgroundColor: Colors.white,
+                        onRefresh: () async {
+                          HapticFeedback.lightImpact();
+                          final error = await _controller.recargaSilenciosa();
+
+                          if (error != null && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  error,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                backgroundColor: Colors.grey.shade800,
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
                         },
+                        // Si no hay historial, mostramos un mensaje amigable en lugar de la lista vacía
+                        child: _controller.historialFiltrado.isEmpty
+                            ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  SizedBox(
+                                    height:
+                                        MediaQuery.of(context).size.height *
+                                        0.2,
+                                  ),
+                                  _controller.error.isNotEmpty
+                                      ? Center(
+                                          child: Text(
+                                            _controller.error,
+                                            style: const TextStyle(
+                                              color: Colors.red,
+                                            ),
+                                          ),
+                                        )
+                                      : _estadoVacio(),
+                                ],
+                              )
+                            //Si hay historial, mostramos la lista normal
+                            : ListView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 20,
+                                ),
+                                itemCount: _controller.historialFiltrado.length,
+                                itemBuilder: (context, index) {
+                                  final item =
+                                      _controller.historialFiltrado[index];
+                                  return _construirTarjetaHistorial(item);
+                                },
+                              ),
                       ),
               ),
             ],
@@ -127,7 +167,6 @@ class HistorialScreenState extends State<HistorialScreen> {
   }
 
   // widget para crear los chips de filtro, con animación y estilos personalizados
-
   Widget _crearChip(String etiqueta, String valorFiltro) {
     final bool seleccionado = _controller.filtroActual == valorFiltro;
     return AnimatedContainer(

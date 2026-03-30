@@ -10,6 +10,8 @@ class HistorialController extends ChangeNotifier {
   List<dynamic> _historialCompleto = [];
   List<dynamic> _historialFiltrado = [];
   String _filtroActual = 'todos';
+  DateTime _ultimaSincronizacion = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _isFetching = false;
 
   // Exponemos las variables para que la UI las lea
   bool get isLoading => _isLoading;
@@ -65,6 +67,30 @@ class HistorialController extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  // Funcion para recarga silenciosa del historial, que la UI puede llamar al volver a la pantalla o al hacer pull-to-refresh
+  Future<String?> recargaSilenciosa() async {
+    if (_isFetching) return null;
+    if (DateTime.now().difference(_ultimaSincronizacion).inSeconds < 3) {
+      return null;
+    }
+
+    _isFetching = true;
+    final idUsuario = userData['id'] ?? userData['_id'];
+    final result = await ApiService.obtenerHistorial(idUsuario);
+    _isFetching = false;
+
+    if (result.containsKey('error')) {
+      return "Sin conexión. Mostrando datos guardados.";
+    }
+
+    _historialCompleto = result['historial'] ?? [];
+    _aplicarFiltroInterno(_filtroActual);
+    _ultimaSincronizacion = DateTime.now();
+
+    notifyListeners();
+    return null;
   }
 
   void cambiarFiltro(String filtro) {
