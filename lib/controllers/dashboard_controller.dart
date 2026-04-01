@@ -5,10 +5,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:otp/otp.dart';
 import 'package:transporte_app/services/api_service.dart';
+import 'package:transporte_app/services/local_cache_service.dart'; // Tu Archivero
 
 // Manda cambios a la UI para que se redibuje
 class DashboardController extends ChangeNotifier {
   final Map<String, dynamic> userData;
+  final LocalCacheService _cacheService =
+      LocalCacheService(); // Instancia del caché
 
   double _saldoActual = 0.0;
   int _boletosActuales = 0;
@@ -18,12 +21,16 @@ class DashboardController extends ChangeNotifier {
   DateTime _ultimaSincronizacion = DateTime.fromMillisecondsSinceEpoch(0);
   bool _isFetching = false;
 
-  // Usos de getters para que la UI pueda acceder a los datos sin modificar directamente
+  // Novedad: Variable para el Mini-Historial
+  Map<String, dynamic>? _ultimoViaje;
+
+  // Getters
   double get saldoActual => _saldoActual;
   int get boletosActuales => _boletosActuales;
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
   String get codigoTotpActual => _codigoTotpActual;
+  Map<String, dynamic>? get ultimoViaje => _ultimoViaje;
 
   final double limiteMaxRecarga = 1000.0;
   final int limiteMaxBoletos = 50;
@@ -34,12 +41,69 @@ class DashboardController extends ChangeNotifier {
 
   // Constructor del controlador
   DashboardController(this.userData) {
-    _saldoActual = (userData['saldo'] ?? 0).toDouble();
-    _boletosActuales = userData['boletosDisponibles'] ?? 0;
-
-    _sincronizarConServidor();
+    _inicializarDatos();
     _conectarSocket();
     _iniciarMotorTOTP();
+  }
+
+  // --- PASO 1: ARRANQUE Y LECTURA DE CACHÉ ---
+  Future<void> _inicializarDatos() async {
+    // 1. Leer Dashboard de caché (si existe) para un arranque más fluido
+    final cacheDash = await _cacheService.obtenerDashboard();
+    _saldoActual = (cacheDash?['saldo'] ?? userData['saldo'] ?? 0).toDouble();
+    _boletosActuales =
+        cacheDash?['boletosDisponibles'] ?? userData['boletosDisponibles'] ?? 0;
+
+    // 2. Leer Mini-Historial del Archivero
+    _ultimoViaje = await _cacheService.obtenerUltimoViaje();
+    notifyListeners(); // Pintamos la UI de inmediato con lo que haya
+
+    // 3. Si no hay último viaje guardado, lo buscamos sigilosamente en el backend
+    if (_ultimoViaje == null) {
+      _buscarUltimoViajeEnServidor();
+    }
+
+    // 4. Pedimos datos frescos de saldo y boletos
+    await _sincronizarConServidor();
+  }
+
+  // Busca el último viaje si el usuario limpió caché o instaló la app de nuevo
+  Future<void> _buscarUltimoViajeEnServidor() async {
+    final result = await ApiService.obtenerHistorial(
+      userData['id'],
+      limite: 20,
+    );
+    if (!result.containsKey('error')) {
+      final lista = result['historial'] as List<dynamic>? ?? [];
+      // Buscamos el primero que sea de tipo 'viaje'
+      final viaje = lista.firstWhere(
+        (item) => item['tipo'] == 'viaje',
+        orElse: () => null,
+      );
+      if (viaje != null) {
+        _ultimoViaje = viaje;
+        await _cacheService.guardarUltimoViaje(viaje);
+        notifyListeners();
+      }
+    }
+  }
+
+  // Centralizamos la función de guardado para no repetir código
+  Future<void> _actualizarBovedasLocales() async {
+    // Actualizar Bóveda del Dashboard
+    await _cacheService.guardarDashboard({
+      'saldo': _saldoActual,
+      'boletosDisponibles': _boletosActuales,
+    });
+
+    // Actualizar también la sesión nativa de Login para que sobreviva cierres forzados
+    Map<String, dynamic> usuarioActualizado = Map<String, dynamic>.from(
+      userData,
+    );
+    usuarioActualizado['saldo'] = _saldoActual;
+    usuarioActualizado['boletosDisponibles'] = _boletosActuales;
+    const storage = FlutterSecureStorage();
+    await storage.write(key: 'userData', value: jsonEncode(usuarioActualizado));
   }
 
   // Control de TOTP
@@ -71,7 +135,7 @@ class DashboardController extends ChangeNotifier {
     notifyListeners();
   }
 
-  //Sockets, recibe un callback de la UI
+  // Sockets, recibe un callback de la UI
   void _conectarSocket() {
     String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
 
@@ -87,44 +151,43 @@ class DashboardController extends ChangeNotifier {
       socket.emit('unirse_canal', userData['id']);
     });
 
+    // Servicio en tiempo real
     socket.on('boleto_cobrado', (data) {
       if (data['idPasajero'] == userData['id']) {
         _boletosActuales = data['boletosRestantes'];
+
+        // Creamos un registro temporal del viaje para actualizar el Mini-Historial al instante
+        _ultimoViaje = {
+          'tipo': 'viaje',
+          'titulo': 'Abordaje en transporte',
+          'fecha': DateTime.now().toIso8601String(),
+        };
+
+        // Guardamos las nuevas verdades
+        _actualizarBovedasLocales();
+        _cacheService.guardarUltimoViaje(_ultimoViaje!);
+
         notifyListeners();
         onBoletoCobradoCallback?.call(data['boletosRestantes']);
       }
     });
   }
 
-  // Función que la UI puede asignar para mostrar el diálogo de boleto cobrado
   Function(int)? onBoletoCobradoCallback;
 
-  // L+ogica para sincronizar y llamado de API
   Future<void> _sincronizarConServidor() async {
     final result = await ApiService.obtenerPerfil(userData['id']);
 
     if (!result.containsKey('error')) {
       _saldoActual = (result['saldo'] ?? _saldoActual).toDouble();
       _boletosActuales = result['boletosDisponibles'] ?? _boletosActuales;
-      notifyListeners();
-
-      Map<String, dynamic> usuarioActualizado = userData;
-      usuarioActualizado['saldo'] = _saldoActual;
-      usuarioActualizado['boletosDisponibles'] = _boletosActuales;
-
-      const storage = FlutterSecureStorage();
-      await storage.write(
-        key: 'userData',
-        value: jsonEncode(usuarioActualizado),
-      );
+      await _actualizarBovedasLocales();
     }
     _isSyncing = false;
     notifyListeners();
   }
 
-  // Función que la UI puede llamar para recargar el historial al volver a la pantalla o hacer pull-to-refresh
   Future<String?> recargaSilenciosa() async {
-    // Escudo Anti-Spam: Ignoramos si ya está cargando o si recargó hace menos de 3 segundos
     if (_isFetching) return null;
     if (DateTime.now().difference(_ultimaSincronizacion).inSeconds < 3) {
       return null;
@@ -135,7 +198,6 @@ class DashboardController extends ChangeNotifier {
     _isFetching = false;
 
     if (result.containsKey('error')) {
-      // En caso de error, no actualizamos nada y devolvemos el mensaje para mostrarlo en la UI
       return "Sin conexión. Mostrando datos guardados.";
     }
 
@@ -143,15 +205,9 @@ class DashboardController extends ChangeNotifier {
     _boletosActuales = result['boletosDisponibles'] ?? _boletosActuales;
     _ultimaSincronizacion = DateTime.now();
 
-    // Guardar la nueva "verdad" en la bóveda
-    Map<String, dynamic> usuarioActualizado = userData;
-    usuarioActualizado['saldo'] = _saldoActual;
-    usuarioActualizado['boletosDisponibles'] = _boletosActuales;
-    const storage = FlutterSecureStorage();
-    await storage.write(key: 'userData', value: jsonEncode(usuarioActualizado));
-
+    await _actualizarBovedasLocales();
     notifyListeners();
-    return null; // Null en este caso es señal de que todo salió bien y no hay mensaje de error que mostrar
+    return null;
   }
 
   Future<Map<String, dynamic>> ejecutarRecarga(double monto) async {
@@ -163,9 +219,10 @@ class DashboardController extends ChangeNotifier {
     _isLoading = false;
     if (!result.containsKey('error')) {
       _saldoActual = (result['saldoActual']).toDouble();
+      await _actualizarBovedasLocales();
     }
     notifyListeners();
-    return result; // Devolvemos el resultado para que la UI muestre el SnackBar
+    return result;
   }
 
   Future<Map<String, dynamic>> ejecutarCompra(
@@ -186,12 +243,12 @@ class DashboardController extends ChangeNotifier {
       _boletosActuales =
           result['boletosDisponibles'] ?? result['boletosActuales'];
       _saldoActual = (result['saldoRestante']).toDouble();
+      await _actualizarBovedasLocales();
     }
     notifyListeners();
     return result;
   }
 
-  // Limpieza al cerrar
   @override
   void dispose() {
     socket.disconnect();

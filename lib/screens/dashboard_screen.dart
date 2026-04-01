@@ -357,7 +357,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: Colors.grey.shade50,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.pets_rounded, size: 45, color: Colors.grey),
+            child: const Icon(
+              Icons.departure_board_rounded,
+              size: 45,
+              color: Colors.grey,
+            ),
           ),
           const SizedBox(height: 16),
           const Text(
@@ -397,6 +401,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       size: 200.0,
       backgroundColor: Colors.white,
     );
+  }
+
+  String _formatearFecha(String fechaIso) {
+    try {
+      final fecha = DateTime.parse(fechaIso).toLocal();
+      return "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year} • ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}";
+    } catch (e) {
+      return fechaIso;
+    }
   }
 
   @override
@@ -506,7 +519,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Container(
                                   height: 50,
                                   width: 1,
-                                  color: Colors.grey.shade200, // Sutil divisor
+                                  color: Colors.grey.shade200,
                                 ),
                                 // Saldo
                                 Column(
@@ -564,6 +577,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // Mini-historial del último viaje
                         const SizedBox(height: 20),
+                        // --- 4. MINI HISTORIAL DINÁMICO ---
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -590,7 +604,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                'Último viaje: Ayer, 14:30 hrs',
+                                // Aquí evaluamos si hay viaje o es nuevo
+                                _controller.ultimoViaje == null
+                                    ? 'Sin viajes por el momento'
+                                    : 'Último viaje: ${_formatearFecha(_controller.ultimoViaje!['fecha'])}',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey.shade600,

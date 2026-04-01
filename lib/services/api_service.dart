@@ -157,12 +157,16 @@ class ApiService {
   }
 
   //-OBTENER HISTORIAL (SÍ necesita token)
-  static Future<Map<String, dynamic>> obtenerHistorial(String idUsuario) async {
+  static Future<Map<String, dynamic>> obtenerHistorial(
+    String idUsuario, {
+    int limite = 20,
+  }) async {
     try {
       final headers = await _getHeaders();
 
+      // Inyectamos la variable límite en la URL como Query Parameter
       final response = await http.get(
-        Uri.parse('$baseUrl/usuarios/$idUsuario/historial'),
+        Uri.parse('$baseUrl/usuarios/$idUsuario/historial?limite=$limite'),
         headers: headers,
       );
 

@@ -13,22 +13,35 @@ class HistorialScreen extends StatefulWidget {
 
 class HistorialScreenState extends State<HistorialScreen> {
   late HistorialController _controller;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+
     _controller = HistorialController(widget.userData);
+
+    _scrollController.addListener(() {
+      // Si el usuario se acerca al final de la lista y no estamos ya cargando más datos, intentamos cargar más
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 200) {
+        _controller.cargarMasDatos();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   // Este método existe para que el MainWrapperScreen pueda forzar la recarga mediante la GlobalKey
   void cargarHistorialPublico() {
-    _controller.cargarHistorialPublico();
+    _controller.cargarHistorialPublico(
+      reiniciar: true,
+    ); // Le pasamos reiniciar para limpiar y traer frescos
   }
 
   String _formatearFecha(String fechaIso) {
@@ -143,17 +156,57 @@ class HistorialScreenState extends State<HistorialScreen> {
                                         : _estadoVacio(),
                                   ],
                                 )
-                              //Si hay historial, mostramos la lista normal
+                              // Si hay historial, mostramos la lista normal
                               : ListView.builder(
+                                  controller:
+                                      _scrollController, // CONECTAMOS EL SCROLL AQUÍ
                                   physics:
                                       const AlwaysScrollableScrollPhysics(),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 20,
                                   ),
+                                  // Le sumamos 1 al item count para poner el loader/texto hasta abajo
                                   itemCount:
-                                      _controller.historialFiltrado.length,
+                                      _controller.historialFiltrado.length + 1,
                                   itemBuilder: (context, index) {
+                                    // Llegamos al final de la lista dibujada
+                                    if (index ==
+                                        _controller.historialFiltrado.length) {
+                                      if (_controller.isLoadingMore) {
+                                        return const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: 20.0,
+                                          ),
+                                          child: Center(
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        );
+                                      } else if (!_controller.hasMore &&
+                                          _controller
+                                              .historialFiltrado
+                                              .isNotEmpty) {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 24.0,
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              'No hay más movimientos',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade500,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      } else {
+                                        return const SizedBox.shrink();
+                                      }
+                                    }
+
                                     final item =
                                         _controller.historialFiltrado[index];
                                     return _construirTarjetaHistorial(item);
@@ -197,6 +250,14 @@ class HistorialScreenState extends State<HistorialScreen> {
         ),
         onSelected: (bool selected) {
           if (selected) {
+            // Hacemos un scroll top al cambiar de filtro para no quedarse perdidos a medio scroll
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            }
             _controller.cambiarFiltro(valorFiltro);
           }
         },
