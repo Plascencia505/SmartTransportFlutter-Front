@@ -24,10 +24,3 @@ Aplicación móvil diseñada para la gestión y validación de pasajes de transp
 * **Lectura QR:** `mobile_scanner`
 * **Conectividad:** `connectivity_plus`
 * **Criptografía:** `crypto` (HMAC-SHA256) y `uuid`
-
-## 🚀 Instalación y Configuración
-
-1. **Clonar el repositorio:**
-   ```bash
-   git clone [https://github.com/tu-usuario/transporte-frontend.git](https://github.com/tu-usuario/transporte-frontend.git)
-   cd transporte-frontend
