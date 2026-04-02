@@ -346,7 +346,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _construirAreaCentral() {
-    if (_controller.boletosActuales <= 0) {
+    if (_controller.boletosActuales <= -4) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -354,18 +354,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             height: 90,
             width: 90,
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Colors.red.shade50,
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.departure_board_rounded,
-              size: 45,
-              color: Colors.grey,
-            ),
+            child: const Icon(Icons.block_flipped, size: 45, color: Colors.red),
           ),
           const SizedBox(height: 16),
           const Text(
-            '¡Ups! Sin Boletos',
+            'Adeudo Máximo',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -374,7 +370,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Adquiere boletos abajo\npara generar tu código.',
+            'Llegaste al límite de 4 viajes a crédito.\nRecarga para seguir viajando.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
@@ -394,12 +390,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
       'idPasajero': widget.userData['id'],
       'totp': _controller.codigoTotpActual,
     });
-
-    return QrImageView(
-      data: datosQR,
-      version: QrVersions.auto,
-      size: 200.0,
-      backgroundColor: Colors.white,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        QrImageView(
+          data: datosQR,
+          version: QrVersions.auto,
+          size: 200.0,
+          backgroundColor: Colors.white,
+        ),
+        if (_controller.boletosActuales <= 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 16.0),
+            child: Text(
+              'Viajando a crédito (${_controller.boletosActuales.abs()}/4)',
+              style: const TextStyle(
+                color: Colors.orange,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+      ],
     );
   }
 

@@ -214,4 +214,29 @@ class ApiService {
       return {'error': 'Error de conexión.'};
     }
   }
+
+  //- SINCRONIZAR LOTE DE VIAJES PENDIENTES (SÍ necesita token)
+  static Future<Map<String, dynamic>> sincronizarLoteViajes(
+    String idOperador,
+    List<Map<String, dynamic>> lote,
+  ) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/viajes/sincronizar-lote'),
+            headers: headers,
+            body: jsonEncode({'idOperador': idOperador, 'viajes': lote}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {'error': 'Error en servidor'};
+      }
+    } catch (e) {
+      return {'error': 'Falla de red'};
+    }
+  }
 }
