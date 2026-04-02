@@ -145,15 +145,8 @@ class HistorialScreenState extends State<HistorialScreen> {
                                           0.2,
                                     ),
                                     _controller.error.isNotEmpty
-                                        ? Center(
-                                            child: Text(
-                                              _controller.error,
-                                              style: const TextStyle(
-                                                color: Colors.red,
-                                              ),
-                                            ),
-                                          )
-                                        : _estadoVacio(),
+                                        ? _estadoErrorConexion() // Pantalla de error de conexión
+                                        : _estadoVacio(), // No hay movimientos que mostrar
                                   ],
                                 )
                               // Si hay historial, mostramos la lista normal
@@ -302,6 +295,79 @@ class HistorialScreenState extends State<HistorialScreen> {
           Text(
             'Tus viajes y recargas aparecerán aquí.',
             style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _estadoErrorConexion() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.cloud_off_rounded,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Sin conexión al servidor',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Text(
+              'No pudimos cargar tus movimientos en este momento. Intenta de nuevo más tarde.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade500,
+                fontSize: 14,
+                height: 1.3,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          TextButton.icon(
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              cargarHistorialPublico();
+            },
+            icon: const Icon(Icons.refresh_rounded, color: Colors.blueAccent),
+            label: const Text(
+              'Reintentar',
+              style: TextStyle(
+                color: Colors.blueAccent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFFE3F2FD), // Fondo azul clarito
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+            ),
           ),
         ],
       ),

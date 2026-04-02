@@ -89,7 +89,11 @@ class HistorialController extends ChangeNotifier {
     );
 
     if (result.containsKey('error')) {
-      _error = result['error'];
+      if (_historialCompleto.isNotEmpty) {
+        _error = '';
+      } else {
+        _error = result['error'];
+      }
       _isLoading = false;
       notifyListeners();
     } else {

@@ -23,14 +23,16 @@ class ApiService {
     String password,
   ) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/usuarios/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'identificador': identificador,
-          'password': password,
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/usuarios/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'identificador': identificador,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -50,11 +52,13 @@ class ApiService {
     Map<String, dynamic> data,
   ) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/usuarios/registro'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(data),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/usuarios/registro'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(data),
+          )
+          .timeout(const Duration(seconds: 5));
       if (response.statusCode == 201) {
         return {'exito': true};
       } else {
@@ -73,11 +77,13 @@ class ApiService {
   ) async {
     try {
       final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl/transacciones/recargar'),
-        headers: headers,
-        body: jsonEncode({'idUsuario': idUsuario, 'monto': monto}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/transacciones/recargar'),
+            headers: headers,
+            body: jsonEncode({'idUsuario': idUsuario, 'monto': monto}),
+          )
+          .timeout(const Duration(seconds: 5));
 
       // Si el token expiró o es inválido, el backend manda error
       if (response.statusCode == 401 || response.statusCode == 400) {
@@ -104,16 +110,19 @@ class ApiService {
     try {
       final headers = await _getHeaders();
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/transacciones/comprar'),
-        headers: headers,
-        body: jsonEncode({
-          'idUsuario': idUsuario,
-          'cantidadBoletos': cantidad, // Corregido: antes era solo 'cantidad'
-          'costoTotal':
-              costoTotal, // Corregido: Agregado para que pase la validación del backend
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/transacciones/comprar'),
+            headers: headers,
+            body: jsonEncode({
+              'idUsuario': idUsuario,
+              'cantidadBoletos':
+                  cantidad, // Corregido: antes era solo 'cantidad'
+              'costoTotal':
+                  costoTotal, // Corregido: Agregado para que pase la validación del backend
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 401 || response.statusCode == 400) {
         final errorBody = jsonDecode(response.body);
@@ -135,15 +144,17 @@ class ApiService {
     try {
       final headers = await _getHeaders();
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/transacciones/utilizar'),
-        headers: headers,
-        body: jsonEncode({
-          'idPasajero': idPasajero,
-          'idOperador': idOperador,
-          'totp': totp,
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/transacciones/utilizar'),
+            headers: headers,
+            body: jsonEncode({
+              'idPasajero': idPasajero,
+              'idOperador': idOperador,
+              'totp': totp,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 401 || response.statusCode == 400) {
         final errorBody = jsonDecode(response.body);
@@ -165,10 +176,12 @@ class ApiService {
       final headers = await _getHeaders();
 
       // Inyectamos la variable límite en la URL como Query Parameter
-      final response = await http.get(
-        Uri.parse('$baseUrl/usuarios/$idUsuario/historial?limite=$limite'),
-        headers: headers,
-      );
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/usuarios/$idUsuario/historial?limite=$limite'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -185,10 +198,12 @@ class ApiService {
     try {
       final headers = await _getHeaders();
 
-      final response = await http.get(
-        Uri.parse('$baseUrl/usuarios/$idUsuario/perfil'),
-        headers: headers,
-      );
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/usuarios/$idUsuario/perfil'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
