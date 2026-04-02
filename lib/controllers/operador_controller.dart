@@ -33,7 +33,6 @@ class OperadorController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Decodificamos el NUEVO formato de QR (HMAC)
       final Map<String, dynamic> dataQR = jsonDecode(qrString);
 
       // Si el QR no tiene nuestra estructura, lo botamos
@@ -45,29 +44,39 @@ class OperadorController extends ChangeNotifier {
       final String idBoleto = dataQR['idBoleto'];
       final String firma = dataQR['firma'];
 
-      // 2. Intentamos validar el boleto en línea con el backend
+      final bool yaFueEscaneado = await _dbOffline.existeBoleto(idBoleto);
+      if (yaFueEscaneado) {
+        _isProcessing = false;
+        notifyListeners();
+        return {
+          'status': 'error',
+          'message': 'Este boleto ya fue escaneado, genera uno nuevo',
+        };
+      }
+
+      //  Intentar validar el boleto en línea con el backend
       final result =
           await ApiService.utilizarBoleto(
             idPasajero,
             userData['id'],
-            idBoleto, // Pasamos el nuevo UUID
-            firma, // Pasamos la nueva firma
+            idBoleto,
+            firma,
           ).timeout(
-            const Duration(seconds: 4), // Timeout rápido para no trabar la fila
+            const Duration(seconds: 4),
             onTimeout: () => {'error': 'offline'},
           );
 
       if (result.containsKey('error')) {
         final errorMsg = result['error'].toString().toLowerCase();
 
-        // 3. LA MAGIA OFFLINE: Si falla la red, guardamos en la mochila local
+        // Si falla la red, guardamos en la mochila local
         if (errorMsg.contains('conexión') ||
             errorMsg.contains('offline') ||
             errorMsg.contains('espera') ||
             errorMsg.contains('red') ||
             errorMsg.contains('timeout')) {
           await _dbOffline.guardarViajePendiente(idPasajero, idBoleto, firma);
-          await cargarPendientes(); // Actualizamos el numerito visual
+          await cargarPendientes();
 
           _isProcessing = false;
           notifyListeners();
@@ -76,7 +85,7 @@ class OperadorController extends ChangeNotifier {
             'message': '¡Validado! (Modo Offline)',
           };
         }
-        // 4. FRAUDE O FALLO GLOBAL (Respuesta negativa del servidor)
+        // fraude, sin saldo, QR inválido, o error del backend
         else {
           _isProcessing = false;
           notifyListeners();
@@ -84,11 +93,10 @@ class OperadorController extends ChangeNotifier {
         }
       }
 
-      // 5. ÉXITO ONLINE NORMAL
       _isProcessing = false;
       notifyListeners();
 
-      // Efecto remolque: Como sí hay red, despertamos al mensajero por si hay rezagados
+      // Activamos la sincronización inmediata para que el viaje offline se suba lo antes posible
       SyncWorkerService().sincronizarPendientes();
 
       return {
@@ -96,7 +104,7 @@ class OperadorController extends ChangeNotifier {
         'message': '¡Pasaje Validado en Nube!',
       };
     } catch (e) {
-      // Si escanean una botella de refresco, un QR viejo (TOTP) o basura
+      // Si el QR no es valido
       _isProcessing = false;
       notifyListeners();
       return {

@@ -20,6 +20,27 @@ class SyncWorkerService extends ChangeNotifier {
   Timer? _timer;
   String? _idOperador;
 
+  /// Arranca el reloj SOLO si no estaba ya corriendo
+  void despertarReloj() {
+    if (_timer != null && _timer!.isActive) return; // Ya está trabajando
+
+    debugPrint('SyncWorker: Despertando el reloj de 30s...');
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      sincronizarPendientes();
+    });
+  }
+
+  /// Apaga el reloj para ahorrar batería
+  void apagarReloj() {
+    if (_timer != null && _timer!.isActive) {
+      _timer!.cancel();
+      _timer = null;
+      debugPrint(
+        'SyncWorker: Mochila vacía. Reloj apagado para ahorrar batería.',
+      );
+    }
+  }
+
   /// Inicia el escucha de red. Se debe llamar una sola vez al iniciar la app del chofer.
   void iniciarVigilante(String idOperador) {
     _idOperador = idOperador;
@@ -27,12 +48,15 @@ class SyncWorkerService extends ChangeNotifier {
       'SyncWorker: Vigilante de red activado para Operador $_idOperador.',
     );
 
-    // Intenta vaciar la mochila silenciosamente cada 30 segundos
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      sincronizarPendientes();
+    // Revisar si hay viajes de la sesión anterior
+    _db.obtenerViajesPendientes().then((pendientes) {
+      if (pendientes.isNotEmpty) {
+        debugPrint('SyncWorker: Se encontraron viajes de la sesión anterior.');
+        despertarReloj();
+      }
     });
 
-    // Escucha si prenden o apagan el WiFi/Datos
+    // Escuchar eventos de conexión
     _subscription = Connectivity().onConnectivityChanged.listen((
       List<ConnectivityResult> results,
     ) {
@@ -44,7 +68,7 @@ class SyncWorkerService extends ChangeNotifier {
       }
     });
 
-    // Si se inicia el vigilante y ya hay conexión, intentamos sincronizar de inmediato
+    // Intentar sincronizar al iniciar por si ya hay conexión, así no esperamos al cambio de red
     Connectivity().checkConnectivity().then((results) {
       if (results.any((result) => result != ConnectivityResult.none)) {
         debugPrint(
@@ -68,6 +92,7 @@ class SyncWorkerService extends ChangeNotifier {
       final pendientes = await _db.obtenerViajesPendientes();
 
       if (pendientes.isEmpty) {
+        apagarReloj();
         _isSyncing = false;
         notifyListeners();
         return;
@@ -77,14 +102,12 @@ class SyncWorkerService extends ChangeNotifier {
         'SyncWorker: Enviando ${pendientes.length} viajes al servidor...',
       );
 
-      // Mandar lote al backend CON el ID del operador
       final result = await ApiService.sincronizarLoteViajes(
         _idOperador!,
         pendientes,
       );
 
       if (!result.containsKey('error')) {
-        // Limpieza inteligente basada en la respuesta del Node.js
         final List<dynamic> resultadosNode = result['resultados'] ?? [];
         List<int> idsABorrar = [];
 
@@ -106,6 +129,7 @@ class SyncWorkerService extends ChangeNotifier {
           );
         }
       } else {
+        // Si se rechaza el lote no lo borramos para reintentar después
         debugPrint(
           'SyncWorker: El servidor rechazó el lote o falló la conexión. Reintentando después.',
         );
@@ -113,7 +137,6 @@ class SyncWorkerService extends ChangeNotifier {
     } catch (e) {
       debugPrint('SyncWorker: Error crítico en sincronización: $e');
     } finally {
-      // Esto siempre se ejecuta al final, pase lo que pase
       _isSyncing = false;
       notifyListeners();
     }
@@ -121,7 +144,7 @@ class SyncWorkerService extends ChangeNotifier {
 
   void detenerVigilante() {
     _subscription?.cancel();
-    _timer?.cancel();
+    apagarReloj();
     _idOperador = null;
   }
 }

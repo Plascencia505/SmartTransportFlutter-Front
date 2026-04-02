@@ -52,25 +52,23 @@ class _ChoferScreenState extends State<ChoferScreen> {
     final resultado = await _controller.procesarBoleto(codigo);
     if (!mounted) return;
 
-    int tiempoDePausa = 2; // Por defecto pausamos 2 segundos
+    int tiempoDePausa = 2;
 
     switch (resultado['status']) {
       case 'online_success':
         HapticFeedback.heavyImpact();
         _mostrarMensaje(resultado['message'], Colors.green, Icons.cloud_done);
-        tiempoDePausa = 2; // Muy rápido, que pase el siguiente
+        tiempoDePausa = 2;
         break;
       case 'offline_success':
         HapticFeedback.mediumImpact();
-        // Avisamos con un verde agua y pausamos un poco más para que el chofer lo lea
         _mostrarMensaje(resultado['message'], Colors.teal, Icons.sd_storage);
         tiempoDePausa = 3;
         break;
-      case 'error': // Fraude, sin saldo, o error del backend
+      case 'error': // Fraude o error del backend
         HapticFeedback.vibrate();
         _mostrarMensaje(resultado['message'], Colors.red, Icons.cancel);
-        tiempoDePausa =
-            4; // Pausa larga para que el chofer pueda detener al pasajero
+        tiempoDePausa = 4; //pausa más larga
         break;
       case 'invalid_qr':
         _mostrarMensaje(
@@ -111,9 +109,7 @@ class _ChoferScreenState extends State<ChoferScreen> {
           ],
         ),
         backgroundColor: color,
-        duration: const Duration(
-          seconds: 3,
-        ), // El globo dura 3 segundos visible
+        duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
@@ -137,7 +133,7 @@ class _ChoferScreenState extends State<ChoferScreen> {
           appBar: AppBar(
             title: Text(widget.userData['nombres']),
             actions: [
-              // === INDICADOR VISUAL COMBINADO (CONTADOR + SYNC) ===
+              //Contador de viajes offline + indicador de sincronización
               ListenableBuilder(
                 listenable: SyncWorkerService(),
                 builder: (context, child) {

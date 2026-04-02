@@ -53,6 +53,19 @@ class DbOfflineService {
     debugPrint('SQLite: Tabla "viajes_pendientes" (HMAC) creada con éxito.');
   }
 
+  /// Verifica si un folio ya fue escaneado en modo offline
+  Future<bool> existeBoleto(String idBoleto) async {
+    final db = await database;
+    final resultado = await db.query(
+      'viajes_pendientes',
+      where: 'idBoleto = ?',
+      whereArgs: [idBoleto],
+      limit:
+          1, // Solo nos interesa saber si existe, no necesitamos todos los datos
+    );
+    return resultado.isNotEmpty;
+  }
+
   // OPERACIONES DEL VALIDADOR OFFLINE CON HMAC
 
   /// Guarda los datos del boleto firmado cuando no hay internet

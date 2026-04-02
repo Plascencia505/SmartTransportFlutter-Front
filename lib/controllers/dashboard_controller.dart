@@ -118,7 +118,7 @@ class DashboardController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- WEB SOCKETS ---
+  // sockets para recibir eventos en tiempo real
   void _conectarSocket() {
     String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
 
