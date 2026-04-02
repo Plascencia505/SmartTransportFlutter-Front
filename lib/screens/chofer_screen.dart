@@ -4,6 +4,7 @@ import 'package:transporte_app/screens/login_screen.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:transporte_app/controllers/operador_controller.dart';
+import 'package:transporte_app/services/sync_worker_service.dart';
 
 class ChoferScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -22,6 +23,17 @@ class _ChoferScreenState extends State<ChoferScreen> {
   void initState() {
     super.initState();
     _controller = OperadorController(widget.userData);
+    SyncWorkerService().iniciarVigilante(widget.userData['id']);
+
+    // Escuchamos al Mensajero: Si termina de sincronizar, le decimos al controlador que cuente de nuevo
+    SyncWorkerService().addListener(_onSyncWorkerUpdate);
+  }
+
+  void _onSyncWorkerUpdate() {
+    // Si el mensajero dejó de trabajar (terminó de subir datos), actualizamos el contador visual
+    if (!SyncWorkerService().isSyncing) {
+      _controller.cargarPendientes();
+    }
   }
 
   Future<void> _procesarQR(BarcodeCapture capture) async {
@@ -33,52 +45,75 @@ class _ChoferScreenState extends State<ChoferScreen> {
     final String? codigo = barcodes.first.rawValue;
     if (codigo == null) return;
 
-    // Pausar cámara mientras se procesa
+    // Pausar cámara de inmediato
     cameraController.stop();
 
-    // Le pasamos el QR crudo al cerebro
+    // Mandar al cerebro
     final resultado = await _controller.procesarBoleto(codigo);
-
     if (!mounted) return;
 
-    // Evaluamos qué nos dijo el controlador
+    int tiempoDePausa = 2; // Por defecto pausamos 2 segundos
+
     switch (resultado['status']) {
       case 'online_success':
         HapticFeedback.heavyImpact();
-        _mostrarMensaje(resultado['message'], Colors.green);
+        _mostrarMensaje(resultado['message'], Colors.green, Icons.cloud_done);
+        tiempoDePausa = 2; // Muy rápido, que pase el siguiente
         break;
       case 'offline_success':
         HapticFeedback.mediumImpact();
-        //Diferenciamos el mensaje offline con un color distinto
-        _mostrarMensaje(resultado['message'], Colors.teal);
+        // Avisamos con un verde agua y pausamos un poco más para que el chofer lo lea
+        _mostrarMensaje(resultado['message'], Colors.teal, Icons.sd_storage);
+        tiempoDePausa = 3;
         break;
-      case 'error':
-        HapticFeedback.vibrate(); // Error
-        _mostrarMensaje(resultado['message'], Colors.red);
+      case 'error': // Fraude, sin saldo, o error del backend
+        HapticFeedback.vibrate();
+        _mostrarMensaje(resultado['message'], Colors.red, Icons.cancel);
+        tiempoDePausa =
+            4; // Pausa larga para que el chofer pueda detener al pasajero
         break;
       case 'invalid_qr':
-        _mostrarMensaje(resultado['message'], Colors.orange);
+        _mostrarMensaje(
+          resultado['message'],
+          Colors.orange,
+          Icons.qr_code_scanner,
+        );
+        tiempoDePausa = 3;
         break;
     }
 
-    // Esperamos 2 segundos antes de volver a activar la cámara para el siguiente pasajero
-    await Future.delayed(const Duration(seconds: 2));
+    // Esperamos los segundos dictados por la gravedad del asunto
+    await Future.delayed(Duration(seconds: tiempoDePausa));
     if (mounted && resultado['status'] != 'ignored') {
       cameraController.start();
     }
   }
 
-  void _mostrarMensaje(String texto, Color color) {
+  void _mostrarMensaje(String texto, Color color, IconData icono) {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          texto,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          textAlign: TextAlign.center,
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icono, color: Colors.white),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                texto,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
         ),
         backgroundColor: color,
-        duration: const Duration(seconds: 2),
+        duration: const Duration(
+          seconds: 3,
+        ), // El globo dura 3 segundos visible
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
@@ -87,6 +122,7 @@ class _ChoferScreenState extends State<ChoferScreen> {
 
   @override
   void dispose() {
+    SyncWorkerService().removeListener(_onSyncWorkerUpdate);
     cameraController.dispose();
     _controller.dispose();
     super.dispose();
@@ -99,11 +135,60 @@ class _ChoferScreenState extends State<ChoferScreen> {
       builder: (context, child) {
         return Scaffold(
           appBar: AppBar(
-            title: Text('Unidad - ${widget.userData['nombres']}'),
+            title: Text(widget.userData['nombres']),
             actions: [
+              // === INDICADOR VISUAL COMBINADO (CONTADOR + SYNC) ===
+              ListenableBuilder(
+                listenable: SyncWorkerService(),
+                builder: (context, child) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Row(
+                      children: [
+                        // Contador de viajes offline
+                        if (_controller.pendientesCount > 0) ...[
+                          const Icon(
+                            Icons.sd_card,
+                            color: Colors.amber,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${_controller.pendientesCount}',
+                            style: const TextStyle(
+                              color: Colors.amber,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        // Indicador animado de subida a la nube
+                        SyncWorkerService().isSyncing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                Icons.cloud_done_rounded,
+                                // Se pinta gris si hay pendientes y verde si está limpio
+                                color: _controller.pendientesCount > 0
+                                    ? Colors.white38
+                                    : Colors.greenAccent,
+                              ),
+                      ],
+                    ),
+                  );
+                },
+              ),
               IconButton(
                 icon: const Icon(Icons.logout),
                 onPressed: () async {
+                  SyncWorkerService().detenerVigilante();
                   const storage = FlutterSecureStorage();
                   await storage.deleteAll();
 
@@ -142,7 +227,7 @@ class _ChoferScreenState extends State<ChoferScreen> {
                       controller: cameraController,
                       onDetect: _procesarQR,
                     ),
-                    // Filtro visual oscuro y loading
+                    // Filtro visual oscuro
                     if (_controller.isProcessing)
                       Container(
                         color: Colors.black54,

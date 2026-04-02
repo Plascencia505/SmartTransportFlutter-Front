@@ -1,27 +1,25 @@
 import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
-import 'package:otp/otp.dart';
+import 'package:uuid/uuid.dart';
+import 'package:crypto/crypto.dart';
 import 'package:transporte_app/services/api_service.dart';
-import 'package:transporte_app/services/local_cache_service.dart'; // Tu Archivero
+import 'package:transporte_app/services/local_cache_service.dart';
 
-// Manda cambios a la UI para que se redibuje
 class DashboardController extends ChangeNotifier {
   final Map<String, dynamic> userData;
-  final LocalCacheService _cacheService =
-      LocalCacheService(); // Instancia del caché
+  final LocalCacheService _cacheService = LocalCacheService();
 
   double _saldoActual = 0.0;
   int _boletosActuales = 0;
   bool _isLoading = false;
   bool _isSyncing = true;
-  String _codigoTotpActual = '';
-  DateTime _ultimaSincronizacion = DateTime.fromMillisecondsSinceEpoch(0);
   bool _isFetching = false;
+  DateTime _ultimaSincronizacion = DateTime.fromMillisecondsSinceEpoch(0);
 
-  // Novedad: Variable para el Mini-Historial
+  // Aquí guardaremos el JSON final del QR ya empaquetado
+  String _codigoQRActual = '';
   Map<String, dynamic>? _ultimoViaje;
 
   // Getters
@@ -29,45 +27,40 @@ class DashboardController extends ChangeNotifier {
   int get boletosActuales => _boletosActuales;
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
-  String get codigoTotpActual => _codigoTotpActual;
+  String get codigoQRActual => _codigoQRActual;
   Map<String, dynamic>? get ultimoViaje => _ultimoViaje;
 
   final double limiteMaxRecarga = 1000.0;
   final int limiteMaxBoletos = 50;
 
   late io.Socket socket;
-  Timer? _timerSincronizacion;
-  Timer? _timerPeriodico;
 
-  // Constructor del controlador
+  // Callback actualizado para recibir el mensaje
+  Function(int boletosRestantes, String mensaje)? onBoletoCobradoCallback;
+
   DashboardController(this.userData) {
     _inicializarDatos();
     _conectarSocket();
-    _iniciarMotorTOTP();
+    generarBoletoSeguro();
   }
 
-  // --- PASO 1: ARRANQUE Y LECTURA DE CACHÉ ---
+  // Inicio y lectura de datos en cahe local para mostrar algo al instante
   Future<void> _inicializarDatos() async {
-    // 1. Leer Dashboard de caché (si existe) para un arranque más fluido
     final cacheDash = await _cacheService.obtenerDashboard();
     _saldoActual = (cacheDash?['saldo'] ?? userData['saldo'] ?? 0).toDouble();
     _boletosActuales =
         cacheDash?['boletosDisponibles'] ?? userData['boletosDisponibles'] ?? 0;
 
-    // 2. Leer Mini-Historial del Archivero
     _ultimoViaje = await _cacheService.obtenerUltimoViaje();
-    notifyListeners(); // Pintamos la UI de inmediato con lo que haya
+    notifyListeners();
 
-    // 3. Si no hay último viaje guardado, lo buscamos sigilosamente en el backend
     if (_ultimoViaje == null) {
       _buscarUltimoViajeEnServidor();
     }
 
-    // 4. Pedimos datos frescos de saldo y boletos
     await _sincronizarConServidor();
   }
 
-  // Busca el último viaje si el usuario limpió caché o instaló la app de nuevo
   Future<void> _buscarUltimoViajeEnServidor() async {
     final result = await ApiService.obtenerHistorial(
       userData['id'],
@@ -75,7 +68,6 @@ class DashboardController extends ChangeNotifier {
     );
     if (!result.containsKey('error')) {
       final lista = result['historial'] as List<dynamic>? ?? [];
-      // Buscamos el primero que sea de tipo 'viaje'
       final viaje = lista.firstWhere(
         (item) => item['tipo'] == 'viaje',
         orElse: () => null,
@@ -88,15 +80,12 @@ class DashboardController extends ChangeNotifier {
     }
   }
 
-  // Centralizamos la función de guardado para no repetir código
   Future<void> _actualizarBovedasLocales() async {
-    // Actualizar Bóveda del Dashboard
     await _cacheService.guardarDashboard({
       'saldo': _saldoActual,
       'boletosDisponibles': _boletosActuales,
     });
 
-    // Actualizar también la sesión nativa de Login para que sobreviva cierres forzados
     Map<String, dynamic> usuarioActualizado = Map<String, dynamic>.from(
       userData,
     );
@@ -106,36 +95,30 @@ class DashboardController extends ChangeNotifier {
     await storage.write(key: 'userData', value: jsonEncode(usuarioActualizado));
   }
 
-  // Control de TOTP
-  void _iniciarMotorTOTP() {
-    _generarCodigoTOTP();
-    final int ahora = DateTime.now().millisecondsSinceEpoch;
-    final int msFaltantes = 30000 - (ahora % 30000);
-
-    _timerSincronizacion = Timer(Duration(milliseconds: msFaltantes), () {
-      _generarCodigoTOTP();
-      _timerPeriodico = Timer.periodic(const Duration(seconds: 30), (timer) {
-        _generarCodigoTOTP();
-      });
-    });
-  }
-
-  void _generarCodigoTOTP() {
+  void generarBoletoSeguro() {
     final String semilla = userData['totpSecret']?.toString().trim() ?? '';
     if (semilla.isEmpty) return;
 
-    _codigoTotpActual = OTP.generateTOTPCodeString(
-      semilla,
-      DateTime.now().millisecondsSinceEpoch,
-      length: 6,
-      interval: 30,
-      algorithm: Algorithm.SHA1,
-      isGoogle: true,
-    );
+    //"Folio"
+    final String idBoleto = const Uuid().v4();
+    //Firma
+    final List<int> bytesSecreto = utf8.encode(semilla);
+    final List<int> bytesBoleto = utf8.encode(idBoleto);
+    final Hmac hmacSha256 = Hmac(sha256, bytesSecreto);
+    final String firma = hmacSha256.convert(bytesBoleto).toString();
+
+    // Empaquetar el QR
+    final Map<String, dynamic> payload = {
+      'idPasajero': userData['id'],
+      'idBoleto': idBoleto,
+      'firma': firma,
+    };
+
+    _codigoQRActual = jsonEncode(payload);
     notifyListeners();
   }
 
-  // Sockets, recibe un callback de la UI
+  // --- WEB SOCKETS ---
   void _conectarSocket() {
     String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
 
@@ -151,29 +134,29 @@ class DashboardController extends ChangeNotifier {
       socket.emit('unirse_canal', userData['id']);
     });
 
-    // Servicio en tiempo real
-    socket.on('boleto_cobrado', (data) {
+    socket.on('boleto_cobrado', (data) async {
       if (data['idPasajero'] == userData['id']) {
         _boletosActuales = data['boletosRestantes'];
 
-        // Creamos un registro temporal del viaje para actualizar el Mini-Historial al instante
         _ultimoViaje = {
           'tipo': 'viaje',
           'titulo': 'Abordaje en transporte',
-          'fecha': DateTime.now().toIso8601String(),
+          'fecha': DateTime.now().toUtc().toIso8601String(),
         };
 
-        // Guardamos las nuevas verdades
+        generarBoletoSeguro();
+
         _actualizarBovedasLocales();
         _cacheService.guardarUltimoViaje(_ultimoViaje!);
 
         notifyListeners();
-        onBoletoCobradoCallback?.call(data['boletosRestantes']);
+        onBoletoCobradoCallback?.call(
+          data['boletosRestantes'],
+          data['mensaje'] ?? '¡Pasaje pagado con éxito!',
+        );
       }
     });
   }
-
-  Function(int)? onBoletoCobradoCallback;
 
   Future<void> _sincronizarConServidor() async {
     final result = await ApiService.obtenerPerfil(userData['id']);
@@ -253,8 +236,6 @@ class DashboardController extends ChangeNotifier {
   void dispose() {
     socket.disconnect();
     socket.dispose();
-    _timerSincronizacion?.cancel();
-    _timerPeriodico?.cancel();
     super.dispose();
   }
 }

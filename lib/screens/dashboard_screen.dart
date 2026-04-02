@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
@@ -15,7 +14,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
   late DashboardController _controller;
 
   @override
@@ -23,19 +23,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _controller = DashboardController(widget.userData);
 
-    _controller.onBoletoCobradoCallback = (boletosRestantes) {
+    WidgetsBinding.instance.addObserver(this);
+
+    // Receptor del socket
+    _controller.onBoletoCobradoCallback = (boletosRestantes, mensaje) {
       if (!mounted) return;
-      _mostrarTicketModerno(boletosRestantes);
+      _mostrarTicketModerno(boletosRestantes, mensaje);
     };
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }
 
-  void _mostrarTicketModerno(int boletosRestantes) {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _controller.generarBoletoSeguro();
+    }
+  }
+
+  // 2. MODAL ACTUALIZADO PARA MOSTRAR EL MENSAJE OFFLINE/ONLINE
+  void _mostrarTicketModerno(int boletosRestantes, String mensaje) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -65,17 +77,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  '¡Viaje Pagado!',
+                  '¡Cobro Registrado!',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: Colors.black87,
                   ),
                 ),
+                const SizedBox(height: 12),
+                Text(
+                  mensaje, // <-- Aquí dice si fue online o diferido
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.blueAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(
                   'Te quedan $boletosRestantes boletos',
-                  style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 32),
                 SizedBox(
@@ -382,21 +404,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    if (_controller.codigoTotpActual.isEmpty) {
-      return _dibujarShimmer(200, 200);
+    // 3. ACTUALIZADO AL NUEVO NOMBRE DE VARIABLE Y SIN JSONENCODE MANUAL
+    if (_controller.codigoQRActual.isEmpty) {
+      return _dibujarShimmer(180, 180);
     }
 
-    final datosQR = jsonEncode({
-      'idPasajero': widget.userData['id'],
-      'totp': _controller.codigoTotpActual,
-    });
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         QrImageView(
-          data: datosQR,
+          data: _controller.codigoQRActual, // <-- Directo del controlador
           version: QrVersions.auto,
-          size: 200.0,
+          size: 180.0,
           backgroundColor: Colors.white,
         ),
         if (_controller.boletosActuales <= 0)
@@ -429,7 +448,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       listenable: _controller,
       builder: (BuildContext builderContext, Widget? child) {
         return Scaffold(
-          // Colores y fondo igual a los de historial y perfil para mantener consistencia
           backgroundColor: const Color(0xFFF5F7FA),
           body: _controller.isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -438,6 +456,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   backgroundColor: Colors.white,
                   onRefresh: () async {
                     HapticFeedback.lightImpact();
+                    _controller
+                        .generarBoletoSeguro(); // Regeneramos el QR al hacer pull-to-refresh
                     final error = await _controller.recargaSilenciosa();
                     if (error != null && builderContext.mounted) {
                       ScaffoldMessenger.of(builderContext).showSnackBar(
@@ -588,7 +608,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // Mini-historial del último viaje
                         const SizedBox(height: 20),
-                        // --- 4. MINI HISTORIAL DINÁMICO ---
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -615,7 +634,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                // Aquí evaluamos si hay viaje o es nuevo
                                 _controller.ultimoViaje == null
                                     ? 'Sin viajes por el momento'
                                     : 'Último viaje: ${_formatearFecha(_controller.ultimoViaje!['fecha'])}',
@@ -631,10 +649,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         const SizedBox(height: 40),
 
-                        // Botones de acción (Recargar y Comprar)
+                        // Botones de acción
                         Row(
                           children: [
-                            // Recargar (Fondo claro, texto azul)
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: () {
@@ -663,7 +680,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            // Comprar (Fondo azul intenso, texto blanco)
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: () {

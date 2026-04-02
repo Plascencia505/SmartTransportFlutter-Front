@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:transporte_app/services/api_service.dart';
 import 'package:transporte_app/services/db_offline_service.dart';
 
-class SyncWorkerService {
+class SyncWorkerService extends ChangeNotifier {
   // Singleton
   static final SyncWorkerService _instancia = SyncWorkerService._interno();
   factory SyncWorkerService() => _instancia;
@@ -12,7 +12,12 @@ class SyncWorkerService {
 
   final DbOfflineService _db = DbOfflineService();
   bool _isSyncing = false;
+
+  // Getter para que la UI sepa si estamos sincronizando o no
+  bool get isSyncing => _isSyncing;
+
   StreamSubscription? _subscription;
+  Timer? _timer;
   String? _idOperador;
 
   /// Inicia el escucha de red. Se debe llamar una sola vez al iniciar la app del chofer.
@@ -22,14 +27,28 @@ class SyncWorkerService {
       'SyncWorker: Vigilante de red activado para Operador $_idOperador.',
     );
 
-    // Escuchamos los cambios en la conectividad
+    // Intenta vaciar la mochila silenciosamente cada 30 segundos
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      sincronizarPendientes();
+    });
+
+    // Escucha si prenden o apagan el WiFi/Datos
     _subscription = Connectivity().onConnectivityChanged.listen((
       List<ConnectivityResult> results,
     ) {
-      // Si hay internet
       if (results.any((result) => result != ConnectivityResult.none)) {
         debugPrint(
-          'SyncWorker: ¡Internet recuperado! Iniciando sincronización...',
+          'SyncWorker: ¡Cambio de red detectado! Iniciando sincronización...',
+        );
+        sincronizarPendientes();
+      }
+    });
+
+    // Si se inicia el vigilante y ya hay conexión, intentamos sincronizar de inmediato
+    Connectivity().checkConnectivity().then((results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        debugPrint(
+          'SyncWorker: Conexión detectada al inicio. Sincronizando...',
         );
         sincronizarPendientes();
       }
@@ -40,15 +59,17 @@ class SyncWorkerService {
   Future<void> sincronizarPendientes() async {
     // Si ya está sincronizando o no sabemos quién es el chofer, abortamos
     if (_isSyncing || _idOperador == null) return;
+
     _isSyncing = true;
+    notifyListeners();
 
     try {
       // Obtener el lote desde la base de datos local
       final pendientes = await _db.obtenerViajesPendientes();
 
       if (pendientes.isEmpty) {
-        debugPrint('SyncWorker: Nada que sincronizar.');
         _isSyncing = false;
+        notifyListeners();
         return;
       }
 
@@ -92,12 +113,15 @@ class SyncWorkerService {
     } catch (e) {
       debugPrint('SyncWorker: Error crítico en sincronización: $e');
     } finally {
+      // Esto siempre se ejecuta al final, pase lo que pase
       _isSyncing = false;
+      notifyListeners();
     }
   }
 
   void detenerVigilante() {
     _subscription?.cancel();
+    _timer?.cancel();
     _idOperador = null;
   }
 }

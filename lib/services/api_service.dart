@@ -139,7 +139,8 @@ class ApiService {
   static Future<Map<String, dynamic>> utilizarBoleto(
     String idPasajero,
     String idOperador,
-    String totp,
+    String idBoleto,
+    String firma,
   ) async {
     try {
       final headers = await _getHeaders();
@@ -151,7 +152,8 @@ class ApiService {
             body: jsonEncode({
               'idPasajero': idPasajero,
               'idOperador': idOperador,
-              'totp': totp,
+              'idBoleto': idBoleto,
+              'firma': firma,
             }),
           )
           .timeout(const Duration(seconds: 5));
@@ -218,25 +220,44 @@ class ApiService {
   //- SINCRONIZAR LOTE DE VIAJES PENDIENTES (SÍ necesita token)
   static Future<Map<String, dynamic>> sincronizarLoteViajes(
     String idOperador,
-    List<Map<String, dynamic>> lote,
+    List<Map<String, dynamic>> viajesPendientes,
   ) async {
     try {
       final headers = await _getHeaders();
+
+      // 1. Mapeamos la lista de SQLite al JSON exacto que Node.js espera
+      final payload = {
+        'idOperador': idOperador,
+        'viajes': viajesPendientes
+            .map(
+              (v) => {
+                'id': v['id'],
+                'idPasajero': v['idPasajero'],
+                'idBoleto': v['idBoleto'],
+                'firma': v['firma'],
+                'fechaHoraEscaneo': v['fechaHoraEscaneo'],
+              },
+            )
+            .toList(),
+      };
+
       final response = await http
           .post(
-            Uri.parse('$baseUrl/viajes/sincronizar-lote'),
+            Uri.parse('$baseUrl/transacciones/sincronizar-lote'),
             headers: headers,
-            body: jsonEncode({'idOperador': idOperador, 'viajes': lote}),
+            body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(
+            const Duration(seconds: 10),
+          ); // Le damos 10 segundos porque es un lote pesado
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
-        return {'error': 'Error en servidor'};
+        return {'error': 'Error del servidor: ${response.statusCode}'};
       }
     } catch (e) {
-      return {'error': 'Falla de red'};
+      return {'error': 'Falla de red: No se alcanzó el servidor.'};
     }
   }
 }
