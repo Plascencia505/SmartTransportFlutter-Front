@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:transporte_app/services/api_service.dart';
+import 'package:flutter/services.dart';
+import 'package:transporte_app/controllers/login_controller.dart';
 import 'package:transporte_app/screens/chofer_screen.dart';
 import 'package:transporte_app/screens/registro_screen.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:transporte_app/screens/main_wrapper_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -14,59 +13,62 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _identificadorCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  bool _isLoading = false;
-  bool _ocultarPassword = true;
+  late LoginController _controller;
 
-  void _iniciarSesion() async {
-    setState(() => _isLoading = true);
+  @override
+  void initState() {
+    super.initState();
+    _controller = LoginController();
+  }
 
-    final result = await ApiService.login(
-      _identificadorCtrl.text.trim(),
-      _passwordCtrl.text.trim(),
-    );
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
-    if (!mounted) {
-      return;
-    }
+  Future<void> _procesarLogin() async {
+    HapticFeedback.lightImpact();
+    FocusScope.of(context).unfocus(); // Oculta el teclado al presionar el botón
 
-    setState(() => _isLoading = false);
+    final resultado = await _controller.iniciarSesion();
 
-    if (result.containsKey('error')) {
+    if (!mounted) return;
+
+    if (resultado.containsKey('error')) {
+      HapticFeedback.heavyImpact(); // Feedback táctil de error
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['error']), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(
+            resultado['error'],
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: Colors.redAccent.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
       );
-    } else {
-      // -Guardamos la sesión y el token en la bóveda segura para mantener al usuario logueado-
-      const storage = FlutterSecureStorage();
-      await storage.write(
-        key: 'userData',
-        value: jsonEncode(result['dashboard']),
-      );
-      if (result.containsKey('token')) {
-        await storage.write(key: 'jwt_token', value: result['token']);
-      }
+    } else if (resultado['exito'] == true) {
+      HapticFeedback.mediumImpact(); // Feedback de éxito
 
-      if (!mounted) {
-        return;
-      }
+      final String rol = resultado['rol'];
+      final Map<String, dynamic> dashboardData = resultado['dashboard'];
 
-      if (result['dashboard']['rol'] == 'operador') {
-        // Si es chofer, va a su pantalla normal
+      if (rol == 'operador') {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => ChoferScreen(userData: result['dashboard']),
+            builder: (context) => ChoferScreen(userData: dashboardData),
           ),
         );
       } else {
-        // Si es pasajero, lo mandamos al wrapper que contiene el dashboard y el historial
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) =>
-                MainWrapperScreen(userData: result['dashboard']),
+            builder: (context) => MainWrapperScreen(userData: dashboardData),
           ),
         );
       }
@@ -76,72 +78,215 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.directions_bus, size: 80, color: Colors.blue),
-              const SizedBox(height: 20),
-              const Text(
-                'Transporte Inteligente',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 40),
-              TextField(
-                controller: _identificadorCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Correo o Teléfono',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passwordCtrl,
-                obscureText: _ocultarPassword,
-                decoration: InputDecoration(
-                  labelText: 'Contraseña',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _ocultarPassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _ocultarPassword = !_ocultarPassword;
-                      });
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              _isLoading
-                  ? const CircularProgressIndicator()
-                  : ElevatedButton(
-                      onPressed: _iniciarSesion,
-                      child: const Text(
-                        'Iniciar Sesión',
-                        style: TextStyle(fontSize: 16),
+      backgroundColor: const Color(
+        0xFFF5F7FA,
+      ), // Mismo fondo limpio que tu historial
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 40.0,
+            ),
+            child: ListenableBuilder(
+              listenable: _controller,
+              builder: (context, child) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.blueAccent.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.directions_bus_rounded,
+                        size: 72,
+                        color: Colors.blueAccent,
                       ),
                     ),
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const RegistroScreen(),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'RUTAPA',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                        color: Colors.black87,
+                      ),
                     ),
-                  );
-                },
-                child: const Text('¿No tienes cuenta? Regístrate aquí'),
-              ),
-            ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Rutas para todos',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 48),
+
+                    // Formulario de inicio de sesión
+                    _buildTextField(
+                      controller: _controller.identificadorCtrl,
+                      label: 'Correo o Teléfono',
+                      icon: Icons.person_rounded,
+                      keyboardType: TextInputType.emailAddress,
+                      enabled: !_controller.isLoading,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      controller: _controller.passwordCtrl,
+                      label: 'Contraseña',
+                      icon: Icons.lock_rounded,
+                      obscureText: _controller.ocultarPassword,
+                      enabled: !_controller.isLoading,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _controller.ocultarPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: Colors.grey.shade500,
+                        ),
+                        onPressed: _controller.togglePasswordVisibility,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Botón de inicio de sesión con animación y feedback táctil
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _controller.isLoading
+                            ? null
+                            : _procesarLogin,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.blueAccent.withValues(
+                            alpha: 0.6,
+                          ),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: _controller.isLoading
+                            ? const SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Text(
+                                'Iniciar Sesión',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Enlace para registro
+                    TextButton(
+                      onPressed: _controller.isLoading
+                          ? null
+                          : () {
+                              HapticFeedback.selectionClick();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const RegistroScreen(),
+                                ),
+                              );
+                            },
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey.shade700,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: RichText(
+                        text: TextSpan(
+                          text: '¿No tienes cuenta? ',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                          children: const [
+                            TextSpan(
+                              text: 'Regístrate aquí',
+                              style: TextStyle(
+                                color: Colors.blueAccent,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // Inputs personalizados para mantener la consistencia visual y funcional
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool obscureText = false,
+    bool enabled = true,
+    TextInputType keyboardType = TextInputType.text,
+    Widget? suffixIcon,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      enabled: enabled,
+      keyboardType: keyboardType,
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.grey.shade600),
+        filled: true,
+        fillColor: enabled ? Colors.white : Colors.grey.shade100,
+        prefixIcon: Icon(icon, color: Colors.grey.shade400),
+        suffixIcon: suffixIcon,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 18,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 2),
         ),
       ),
     );

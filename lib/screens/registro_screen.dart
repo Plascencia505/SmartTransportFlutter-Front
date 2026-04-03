@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:transporte_app/services/api_service.dart';
+import 'package:transporte_app/controllers/registro_controller.dart';
 
 class RegistroScreen extends StatefulWidget {
   const RegistroScreen({super.key});
@@ -10,51 +10,61 @@ class RegistroScreen extends StatefulWidget {
 }
 
 class _RegistroScreenState extends State<RegistroScreen> {
-  final List<GlobalKey<FormState>> _formKeys = [
-    GlobalKey<FormState>(), // Paso 1: Identidad
-    GlobalKey<FormState>(), // Paso 2: Contacto
-    GlobalKey<FormState>(), // Paso 3: Seguridad
-  ];
+  late RegistroController _controller;
 
-  // Controladores
-  final _nombresCtrl = TextEditingController();
-  final _apellidosCtrl = TextEditingController();
-  final _telefonoCtrl = TextEditingController();
-  final _correoCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _confirmarPasswordCtrl = TextEditingController();
-  final _fechaNacimientoCtrl = TextEditingController();
-  final _curpCtrl = TextEditingController();
-  final _cuentaCtrl = TextEditingController();
+  @override
+  void initState() {
+    super.initState();
+    _controller = RegistroController();
+  }
 
-  // Estado
-  bool _ocultarPassword = true;
-  bool _ocultarConfirmarPassword = true;
-  String _ocupacionSeleccionada = 'general';
-  bool _isLoading = false;
-  int _currentStep = 0;
-  DateTime? _fechaSeleccionada;
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
-  // Lista para saber si un paso tiene errores y activar la validación reactiva
-  final List<bool> _pasosConError = [false, false, false];
-
-  // Función para mostrar el selector de fecha
   Future<void> _seleccionarFecha(BuildContext context) async {
-    // Cerramos el teclado si está abierto por UX
     FocusScope.of(context).unfocus();
 
     final DateTime? seleccion = await showDatePicker(
       context: context,
-      initialDate: DateTime(2005),
+      // 1. MEMORIA: Si ya hay fecha seleccionada, inicia ahí; si no, en 2005.
+      initialDate: _controller.fechaSeleccionada ?? DateTime(2005),
       firstDate: DateTime(1930),
       lastDate: DateTime.now(),
+      // 2. UX: Oculta el icono del lápiz (modo texto) para un look más limpio
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      // 3. UX: Para cumpleaños es mejor elegir el año primero, no el día
+      initialDatePickerMode: DatePickerMode.year,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
               primary: Colors.blueAccent,
               onPrimary: Colors.white,
-              onSurface: Colors.black,
+              surface: Colors.white,
+              onSurface: Colors.black87,
+            ),
+            dialogTheme: DialogThemeData(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              elevation: 0,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.blueAccent,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  letterSpacing: 0.5,
+                ),
+              ),
             ),
           ),
           child: child!,
@@ -62,70 +72,56 @@ class _RegistroScreenState extends State<RegistroScreen> {
       },
     );
 
-    if (seleccion != null && seleccion != _fechaSeleccionada) {
-      setState(() {
-        _fechaSeleccionada = seleccion;
-        _fechaNacimientoCtrl.text =
-            "${seleccion.year}-${seleccion.month.toString().padLeft(2, '0')}-${seleccion.day.toString().padLeft(2, '0')}";
-      });
-      if (_pasosConError[1]) {
-        _formKeys[1].currentState?.validate();
-      }
+    if (seleccion != null && seleccion != _controller.fechaSeleccionada) {
+      _controller.setFechaSeleccionada(seleccion);
     }
   }
 
-  //Función para avanzar al siguiente paso o registrar si es el último
-  void _avanzarPaso() {
-    bool pasoValido = _formKeys[_currentStep].currentState!.validate();
+  void _procesarAvance() async {
+    FocusScope.of(context).unfocus();
 
-    setState(() {
-      if (pasoValido) {
-        _pasosConError[_currentStep] = false;
-        if (_currentStep < 2) {
-          _currentStep += 1;
-        } else {
-          _registrar();
-        }
-      } else {
-        _pasosConError[_currentStep] = true;
-      }
-    });
-  }
+    final resultado = await _controller.avanzarPaso();
 
-  void _registrar() async {
-    setState(() => _isLoading = true);
+    if (!mounted || resultado == null) return;
 
-    final datos = {
-      "nombres": _nombresCtrl.text.trim(),
-      "apellidos": _apellidosCtrl.text.trim(),
-      "telefono": _telefonoCtrl.text.trim(),
-      "correo": _correoCtrl.text.trim(),
-      "password": _passwordCtrl.text.trim(),
-      "ocupacion": _ocupacionSeleccionada,
-      "numeroCuenta": _ocupacionSeleccionada == 'estudiante'
-          ? _cuentaCtrl.text.trim()
-          : "",
-      "fechaNacimiento": _fechaNacimientoCtrl.text.trim(),
-      "curp": _curpCtrl.text.trim().toUpperCase(),
-    };
-
-    final result = await ApiService.registro(datos);
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (result.containsKey('error')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['error']), backgroundColor: Colors.red),
-      );
+    if (resultado['estado'] == 'error_validacion') {
+      HapticFeedback.heavyImpact(); // Error de formulario
+    } else if (resultado['estado'] == 'avanzo') {
+      HapticFeedback.lightImpact(); // Cambio de paso suave
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registro exitoso. Inicia sesión.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.pop(context);
+      // Significa que devolvió la respuesta de la API de registro
+      if (resultado.containsKey('error')) {
+        HapticFeedback.heavyImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              resultado['error'],
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: Colors.redAccent.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      } else {
+        HapticFeedback.mediumImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              '¡Registro exitoso! Ya puedes iniciar sesión.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+        Navigator.pop(context);
+      }
     }
   }
 
@@ -134,68 +130,101 @@ class _RegistroScreenState extends State<RegistroScreen> {
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor: Colors.grey.shade50,
-        appBar: AppBar(title: const Text('Crear Cuenta'), elevation: 0),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Stepper(
-                type: StepperType.vertical,
-                currentStep: _currentStep,
-                physics: const ClampingScrollPhysics(),
-                onStepTapped: (step) {
-                  if (step == _currentStep) return;
+        backgroundColor: const Color(0xFFF5F7FA), // Fondo RUTAPA
+        appBar: AppBar(
+          title: const Text(
+            'Crear Cuenta',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+            ),
+          ),
+          backgroundColor: const Color(0xFFF5F7FA),
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.black87),
+          centerTitle: true,
+        ),
+        body: ListenableBuilder(
+          listenable: _controller,
+          builder: (context, child) {
+            if (_controller.isLoading) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: Colors.blueAccent,
+                  strokeWidth: 3,
+                ),
+              );
+            }
 
-                  if (_formKeys[_currentStep].currentState!.validate()) {
-                    setState(() => _currentStep = step);
-                  } else {
-                    setState(() => _pasosConError[_currentStep] = true);
-                  }
-                },
-                onStepContinue: _avanzarPaso,
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: const ColorScheme.light(
+                  primary: Colors.blueAccent,
+                ),
+              ),
+              child: Stepper(
+                type: StepperType.vertical,
+                currentStep: _controller.currentStep,
+                physics: const BouncingScrollPhysics(),
+                onStepTapped: _controller.irAPaso,
+                onStepContinue: _procesarAvance,
                 onStepCancel: () {
-                  if (_currentStep > 0) {
-                    setState(() => _currentStep -= 1);
+                  HapticFeedback.selectionClick();
+                  if (_controller.currentStep > 0) {
+                    _controller.retrocederPaso();
                   } else {
                     Navigator.pop(context);
                   }
                 },
                 controlsBuilder: (context, details) {
                   return Padding(
-                    padding: const EdgeInsets.only(top: 24.0),
+                    padding: const EdgeInsets.only(top: 24.0, bottom: 8.0),
                     child: Row(
                       children: [
                         Expanded(
-                          child: ElevatedButton(
-                            onPressed: details.onStepContinue,
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              backgroundColor: Colors.blueAccent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: details.onStepContinue,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blueAccent,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              _currentStep == 2
-                                  ? 'Finalizar Registro'
-                                  : 'Continuar',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                              child: Text(
+                                _controller.currentStep == 2
+                                    ? 'Finalizar Registro'
+                                    : 'Continuar',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
-                        if (_currentStep > 0)
+                        if (_controller.currentStep > 0)
                           Expanded(
-                            child: TextButton(
-                              onPressed: details.onStepCancel,
-                              child: const Text(
-                                'Atrás',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey,
+                            child: SizedBox(
+                              height: 50,
+                              child: TextButton(
+                                onPressed: details.onStepCancel,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.grey.shade700,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Atrás',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ),
@@ -205,288 +234,339 @@ class _RegistroScreenState extends State<RegistroScreen> {
                   );
                 },
                 steps: [
-                  // Primer paso: Identidad
-                  Step(
-                    state: _pasosConError[0]
-                        ? StepState.error
-                        : (_currentStep > 0
-                              ? StepState.complete
-                              : StepState.indexed),
-                    isActive: _currentStep >= 0,
-                    title: const Text(
-                      'Identidad',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    content: Form(
-                      key: _formKeys[0],
-                      autovalidateMode: _pasosConError[0]
-                          ? AutovalidateMode.onUserInteraction
-                          : AutovalidateMode.disabled,
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            controller: _nombresCtrl,
-                            textInputAction: TextInputAction.next,
-                            textCapitalization: TextCapitalization.words,
-                            decoration: const InputDecoration(
-                              labelText: 'Nombres',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.person),
-                            ),
-                            validator: (v) =>
-                                v!.isEmpty ? 'Ingresa tus nombres' : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _apellidosCtrl,
-                            textInputAction: TextInputAction.next,
-                            textCapitalization: TextCapitalization.words,
-                            decoration: const InputDecoration(
-                              labelText: 'Apellidos',
-                              border: OutlineInputBorder(),
-                            ),
-                            validator: (v) =>
-                                v!.isEmpty ? 'Ingresa tus apellidos' : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _curpCtrl,
-                            textInputAction: TextInputAction.done,
-                            textCapitalization: TextCapitalization.characters,
-                            maxLength: 18,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[a-zA-Z0-9]'),
-                              ),
-                            ],
-                            decoration: const InputDecoration(
-                              labelText: 'CURP',
-                              border: OutlineInputBorder(),
-                            ),
-                            validator: (v) => v!.length != 18
-                                ? 'La CURP debe tener exactamente 18 caracteres'
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Segundo paso: contacto
-                  Step(
-                    state: _pasosConError[1]
-                        ? StepState.error
-                        : (_currentStep > 1
-                              ? StepState.complete
-                              : StepState.indexed),
-                    isActive: _currentStep >= 1,
-                    title: const Text(
-                      'Contacto',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    content: Form(
-                      key: _formKeys[1],
-                      autovalidateMode: _pasosConError[1]
-                          ? AutovalidateMode.onUserInteraction
-                          : AutovalidateMode.disabled,
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            controller: _telefonoCtrl,
-                            textInputAction: TextInputAction.next,
-                            keyboardType: TextInputType.phone,
-                            maxLength: 10,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            decoration: const InputDecoration(
-                              labelText: 'Teléfono',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.phone),
-                            ),
-                            validator: (v) => v!.length != 10
-                                ? 'Debe tener 10 dígitos'
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _correoCtrl,
-                            textInputAction: TextInputAction.next,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              labelText: 'Correo Electrónico',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.email),
-                            ),
-                            validator: (v) {
-                              if (v!.isEmpty) return 'Ingresa tu correo';
-                              if (!RegExp(
-                                r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                              ).hasMatch(v)) {
-                                return 'Ingresa un correo válido';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _fechaNacimientoCtrl,
-                            readOnly: true,
-                            onTap: () => _seleccionarFecha(context),
-                            decoration: const InputDecoration(
-                              labelText: 'Fecha de Nacimiento',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.calendar_month),
-                            ),
-                            validator: (v) {
-                              if (v!.isEmpty) {
-                                return 'Selecciona tu fecha de nacimiento';
-                              }
-                              String curp = _curpCtrl.text.trim().toUpperCase();
-                              if (curp.length >= 10 &&
-                                  _fechaSeleccionada != null) {
-                                String year = _fechaSeleccionada!.year
-                                    .toString()
-                                    .substring(2, 4);
-                                String month = _fechaSeleccionada!.month
-                                    .toString()
-                                    .padLeft(2, '0');
-                                String day = _fechaSeleccionada!.day
-                                    .toString()
-                                    .padLeft(2, '0');
-                                String fechaEsperada = "$year$month$day";
-                                String fechaEnCurp = curp.substring(4, 10);
-
-                                if (fechaEsperada != fechaEnCurp) {
-                                  return 'Los datos de identidad no coinciden. Verifica tu información.';
-                                }
-                              }
-                              return null;
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Tercer paso: seguridad
-                  Step(
-                    state: _pasosConError[2]
-                        ? StepState.error
-                        : StepState.indexed,
-                    isActive: _currentStep >= 2,
-                    title: const Text(
-                      'Seguridad',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    content: Form(
-                      key: _formKeys[2],
-                      autovalidateMode: _pasosConError[2]
-                          ? AutovalidateMode.onUserInteraction
-                          : AutovalidateMode.disabled,
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 10),
-                          DropdownButtonFormField<String>(
-                            initialValue: _ocupacionSeleccionada,
-                            decoration: const InputDecoration(
-                              labelText: 'Ocupación',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'general',
-                                child: Text('Público General'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'estudiante',
-                                child: Text('Estudiante'),
-                              ),
-                            ],
-                            onChanged: (val) =>
-                                setState(() => _ocupacionSeleccionada = val!),
-                          ),
-                          if (_ocupacionSeleccionada == 'estudiante') ...[
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _cuentaCtrl,
-                              textInputAction: TextInputAction.next,
-                              maxLength: 8,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: 'Número de Cuenta',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (v) => v!.length != 8
-                                  ? 'Debe tener exactamente 8 dígitos'
-                                  : null,
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _passwordCtrl,
-                            textInputAction: TextInputAction.next,
-                            obscureText: _ocultarPassword,
-                            decoration: InputDecoration(
-                              labelText: 'Contraseña',
-                              border: const OutlineInputBorder(),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _ocultarPassword
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                ),
-                                onPressed: () => setState(
-                                  () => _ocultarPassword = !_ocultarPassword,
-                                ),
-                              ),
-                            ),
-                            validator: (v) =>
-                                v!.length < 8 ? 'Mínimo 8 caracteres' : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _confirmarPasswordCtrl,
-                            textInputAction: TextInputAction
-                                .done, // Último campo, el teclado muestra "Hecho"
-                            obscureText: _ocultarConfirmarPassword,
-                            decoration: InputDecoration(
-                              labelText: 'Confirmar Contraseña',
-                              border: const OutlineInputBorder(),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _ocultarConfirmarPassword
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                ),
-                                onPressed: () => setState(
-                                  () => _ocultarConfirmarPassword =
-                                      !_ocultarConfirmarPassword,
-                                ),
-                              ),
-                            ),
-                            validator: (v) => v != _passwordCtrl.text
-                                ? 'Las contraseñas no coinciden'
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  _buildPasoIdentidad(),
+                  _buildPasoContacto(context),
+                  _buildPasoSeguridad(),
                 ],
               ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // Pasos individuales del Stepper
+
+  Step _buildPasoIdentidad() {
+    return Step(
+      state: _controller.pasosConError[0]
+          ? StepState.error
+          : (_controller.currentStep > 0
+                ? StepState.complete
+                : StepState.indexed),
+      isActive: _controller.currentStep >= 0,
+      title: const Text(
+        'Identidad',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+      content: Form(
+        key: _controller.formKeys[0],
+        autovalidateMode: _controller.pasosConError[0]
+            ? AutovalidateMode.onUserInteraction
+            : AutovalidateMode.disabled,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            _buildTextField(
+              controller: _controller.nombresCtrl,
+              label: 'Nombres',
+              icon: Icons.person_rounded,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              validator: (v) => v!.isEmpty ? 'Ingresa tus nombres' : null,
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _controller.apellidosCtrl,
+              label: 'Apellidos',
+              icon: Icons.badge_rounded,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              validator: (v) => v!.isEmpty ? 'Ingresa tus apellidos' : null,
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _controller.curpCtrl,
+              label: 'CURP',
+              icon: Icons.fingerprint_rounded,
+              textInputAction: TextInputAction.done,
+              textCapitalization: TextCapitalization.characters,
+              maxLength: 18,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+              ],
+              validator: (v) => v!.length != 18
+                  ? 'Debe tener exactamente 18 caracteres'
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Step _buildPasoContacto(BuildContext context) {
+    return Step(
+      state: _controller.pasosConError[1]
+          ? StepState.error
+          : (_controller.currentStep > 1
+                ? StepState.complete
+                : StepState.indexed),
+      isActive: _controller.currentStep >= 1,
+      title: const Text(
+        'Contacto',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+      content: Form(
+        key: _controller.formKeys[1],
+        autovalidateMode: _controller.pasosConError[1]
+            ? AutovalidateMode.onUserInteraction
+            : AutovalidateMode.disabled,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            _buildTextField(
+              controller: _controller.telefonoCtrl,
+              label: 'Teléfono',
+              icon: Icons.phone_rounded,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.next,
+              maxLength: 10,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) =>
+                  v!.length != 10 ? 'Debe tener 10 dígitos' : null,
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _controller.correoCtrl,
+              label: 'Correo Electrónico',
+              icon: Icons.email_rounded,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              validator: (v) {
+                if (v!.isEmpty) return 'Ingresa tu correo';
+                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
+                  return 'Ingresa un correo válido';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _controller.fechaNacimientoCtrl,
+              label: 'Fecha de Nacimiento',
+              icon: Icons.calendar_month_rounded,
+              readOnly: true,
+              onTap: () => _seleccionarFecha(context),
+              validator: (v) {
+                if (v!.isEmpty) return 'Selecciona tu fecha de nacimiento';
+                String curp = _controller.curpCtrl.text.trim().toUpperCase();
+                if (curp.length >= 10 &&
+                    _controller.fechaSeleccionada != null) {
+                  String year = _controller.fechaSeleccionada!.year
+                      .toString()
+                      .substring(2, 4);
+                  String month = _controller.fechaSeleccionada!.month
+                      .toString()
+                      .padLeft(2, '0');
+                  String day = _controller.fechaSeleccionada!.day
+                      .toString()
+                      .padLeft(2, '0');
+                  if ("$year$month$day" != curp.substring(4, 10)) {
+                    return 'La fecha no coincide con tu CURP.';
+                  }
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Step _buildPasoSeguridad() {
+    return Step(
+      state: _controller.pasosConError[2] ? StepState.error : StepState.indexed,
+      isActive: _controller.currentStep >= 2,
+      title: const Text(
+        'Seguridad',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+      content: Form(
+        key: _controller.formKeys[2],
+        autovalidateMode: _controller.pasosConError[2]
+            ? AutovalidateMode.onUserInteraction
+            : AutovalidateMode.disabled,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: _controller.ocupacionSeleccionada,
+              icon: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Colors.grey.shade600,
+              ),
+              decoration: _inputDecoration(
+                label: 'Ocupación',
+                icon: Icons.work_rounded,
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'general',
+                  child: Text('Público General'),
+                ),
+                DropdownMenuItem(
+                  value: 'estudiante',
+                  child: Text('Estudiante'),
+                ),
+              ],
+              onChanged: (val) => _controller.setOcupacion(val!),
+            ),
+            if (_controller.ocupacionSeleccionada == 'estudiante') ...[
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: _controller.cuentaCtrl,
+                label: 'Número de Cuenta',
+                icon: Icons.numbers_rounded,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                maxLength: 8,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                validator: (v) =>
+                    v!.length != 8 ? 'Debe tener exactamente 8 dígitos' : null,
+              ),
+            ],
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _controller.passwordCtrl,
+              label: 'Contraseña',
+              icon: Icons.lock_rounded,
+              obscureText: _controller.ocultarPassword,
+              textInputAction: TextInputAction.next,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _controller.ocultarPassword
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                ),
+                onPressed: _controller.togglePassword,
+              ),
+              validator: (v) => v!.length < 8 ? 'Mínimo 8 caracteres' : null,
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _controller.confirmarPasswordCtrl,
+              label: 'Confirmar Contraseña',
+              icon: Icons.lock_clock_rounded,
+              obscureText: _controller.ocultarConfirmarPassword,
+              textInputAction: TextInputAction.done,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _controller.ocultarConfirmarPassword
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                ),
+                onPressed: _controller.toggleConfirmarPassword,
+              ),
+              validator: (v) => v != _controller.passwordCtrl.text
+                  ? 'Las contraseñas no coinciden'
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Funciones complementarias para mantener el código organizado y reutilizable
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool obscureText = false,
+    TextInputType keyboardType = TextInputType.text,
+    TextInputAction? textInputAction,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+    int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String?)? validator,
+    Widget? suffixIcon,
+    bool readOnly = false,
+    VoidCallback? onTap,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      textCapitalization: textCapitalization,
+      maxLength: maxLength,
+      inputFormatters: inputFormatters,
+      validator: validator,
+      readOnly: readOnly,
+      onTap: onTap,
+      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+      buildCounter: maxLength != null
+          ? (context, {required currentLength, required isFocused, maxLength}) {
+              if (!isFocused && currentLength == 0) return null;
+
+              final bool completado = currentLength == maxLength;
+              return Text(
+                '$currentLength de $maxLength',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: completado ? FontWeight.w700 : FontWeight.w600,
+                  color: completado
+                      ? Colors.green.shade600
+                      : Colors.grey.shade500,
+                ),
+              );
+            }
+          : null,
+      decoration: _inputDecoration(
+        label: label,
+        icon: icon,
+        suffixIcon: suffixIcon,
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required String label,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+      filled: true,
+      fillColor: Colors.white,
+      prefixIcon: Icon(icon, color: Colors.grey.shade400, size: 22),
+      suffixIcon: suffixIcon,
+      // Se elimina el counterText: "" que teníamos antes para permitir que buildCounter haga su trabajo
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
       ),
     );
   }
